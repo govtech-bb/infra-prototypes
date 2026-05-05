@@ -55,7 +55,8 @@ async def upload_files_endpoint(
 
     saved = []
     for f in files:
-        filename = f.filename or ""
+        # Normalize Windows-style separators so Path-based traversal guards work cross-platform.
+        filename = (f.filename or "").replace("\\", "/")
         parts = Path(filename).parts
         if not parts or any(p in ("..", "") or p.startswith("/") for p in parts):
             raise HTTPException(400, f"Invalid filename: {filename!r}")

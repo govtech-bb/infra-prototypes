@@ -20,7 +20,9 @@ def client(tmp_path, monkeypatch):
 
 
 def _make_session(client) -> str:
-    return client.get("/api/session").json()["session_id"]
+    r = client.get("/api/session")
+    assert r.status_code == 200, f"/api/session failed: {r.status_code} {r.text}"
+    return r.json()["session_id"]
 
 
 def test_upload_preserves_nested_path(client):
@@ -65,3 +67,21 @@ def test_upload_flat_filename_still_works(client):
     assert r.status_code == 200
     upload_dir = Path(f"/tmp/deploy-sessions/{session}")
     assert (upload_dir / "index.html").exists()
+
+
+def test_upload_rejects_bare_dotdot(client):
+    session = _make_session(client)
+    r = client.post(
+        f"/api/upload/{session}",
+        files=[("files", ("..", io.BytesIO(b"x"), "text/plain"))],
+    )
+    assert r.status_code == 400
+
+
+def test_upload_rejects_windows_backslash_traversal(client):
+    session = _make_session(client)
+    r = client.post(
+        f"/api/upload/{session}",
+        files=[("files", ("..\\etc\\passwd", io.BytesIO(b"x"), "text/plain"))],
+    )
+    assert r.status_code == 400
