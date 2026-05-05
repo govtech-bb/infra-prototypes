@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import List
 
@@ -11,11 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agent import run_agent_loop
-from sessions import InMemorySessionStore, Session
+from sessions import Session, SqliteSessionStore
 
 app = FastAPI(title="INFRA Deploy Agent")
 client = anthropic.Anthropic()
-store = InMemorySessionStore()
+_DB_PATH = Path(os.environ.get("DEPLOY_AGENT_DB", Path(__file__).parent / "data" / "sessions.db"))
+store = SqliteSessionStore(_DB_PATH)
 
 
 class ChatRequest(BaseModel):
