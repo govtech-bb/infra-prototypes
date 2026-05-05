@@ -37,7 +37,12 @@ def test_classify_truncates_long_details():
 
 @patch("tools.subprocess.run")
 def test_deploy_infrastructure_init_failure_returns_summary(mock_run):
-    mock_run.return_value = MagicMock(returncode=1, stderr="NoCredentialProviders: ...")
+    def fake_run(cmd, **kwargs):
+        if cmd[1] == "init":
+            return MagicMock(returncode=1, stderr="NoCredentialProviders: ...")
+        raise AssertionError(f"Unexpected subprocess call after init failure: {cmd}")
+    mock_run.side_effect = fake_run
+
     result = tools.deploy_infrastructure(
         project_name="x", env="proto",
         site_title="X", owner_name="Y", owner_email="z@example.com",

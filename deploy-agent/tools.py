@@ -22,10 +22,10 @@ STACK_DIR = os.path.join(INFRA_DIR, "stacks", "static-website")
 _ERROR_PATTERNS: list[tuple[str, str]] = [
     (r"NoCredentialProviders|Unable to locate credentials",
      "No AWS credentials found. Set AWS_PROFILE or AWS_ACCESS_KEY_ID."),
-    (r"AccessDenied|UnauthorizedOperation|is not authorized to",
-     "AWS credentials lack permission for this operation. Check IAM."),
     (r"BucketAlreadyOwnedByYou|BucketAlreadyExists",
      "A bucket with this name already exists in your account. Pick a different project_name."),
+    (r"AccessDenied|UnauthorizedOperation|is not authorized to",
+     "AWS credentials lack permission for this operation. Check IAM."),
     (r"Error: error configuring",
      "AWS configuration error — check your region and credentials."),
 ]
@@ -35,7 +35,7 @@ def _classify_error(stderr: str) -> dict:
     """Map raw stderr to a {summary, details} dict for the agent to surface."""
     details = stderr[-2000:]
     for pattern, summary in _ERROR_PATTERNS:
-        if re.search(pattern, stderr):
+        if re.search(pattern, stderr, re.IGNORECASE):
             return {"summary": summary, "details": details}
     return {"summary": "Deployment failed — see details.", "details": details}
 
@@ -230,4 +230,4 @@ def execute_tool(name: str, inputs: dict, session_id: str, session: dict) -> dic
         return deploy_infrastructure(**inputs)
     elif name == "upload_files":
         return upload_files(session=session, **inputs)
-    return {"error": f"Unknown tool: {name}"}
+    return {"summary": f"Unknown tool: {name}", "details": ""}
