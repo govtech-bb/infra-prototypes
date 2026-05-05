@@ -78,7 +78,14 @@ def run_agent_loop(client: anthropic.Anthropic, session: Session) -> str:
                     session=session,
                 )
 
-                if block.name == "deploy_infrastructure" and "summary" not in result:
+                # Guards both the current `{"error": ...}` shape (Task 2-4) and the
+                # `{"summary": ...}` shape introduced in Task 5.
+                deploy_succeeded = (
+                    block.name == "deploy_infrastructure"
+                    and "summary" not in result
+                    and "error" not in result
+                )
+                if deploy_succeeded:
                     session.deployment = result
 
                 tool_results.append({
