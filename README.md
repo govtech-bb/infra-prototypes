@@ -8,11 +8,12 @@ Chat with an AI agent to deploy a static website to AWS (S3 + CloudFront). Drag 
 git clone https://github.com/<you>/infra-prototypes.git
 cd infra-prototypes/deploy-agent
 make install
-export ANTHROPIC_API_KEY=sk-ant-...
-export AWS_PROFILE=...        # or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
-./run.sh
+cp .env.example .env             # then edit .env and fill in real values
+./run.sh                         # auto-loads .env
 # open http://localhost:8000, drag examples/sample-site/ into the chat
 ```
+
+`.env` is gitignored. If you'd rather not use a file, export the same variables in your shell — `run.sh` reads from the environment either way.
 
 The agent will collect a site title, owner name, and email, then call `deploy_infrastructure` (provisions S3 + CloudFront) and `upload_files` (syncs your folder + invalidates the CDN cache). It returns the live URL.
 

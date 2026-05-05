@@ -21,6 +21,7 @@ crash.*.log
 # Secrets
 .env
 .env.*
+!.env.example
 
 # Agent runtime
 deploy-agent/data/

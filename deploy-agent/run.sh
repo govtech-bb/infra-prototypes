@@ -6,6 +6,14 @@ set -e
 
 cd "$(dirname "$0")"
 
+# Auto-load .env if present (gitignored — see .env.example for the template).
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 # Check for required env vars
 if [ -z "$ANTHROPIC_API_KEY" ]; then
   echo "❌  ANTHROPIC_API_KEY is not set."
