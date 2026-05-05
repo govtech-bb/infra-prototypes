@@ -3,6 +3,10 @@
 **Date:** 2026-05-05
 **Scope:** Sub-project A of "demoable to a stranger." Hardens the existing local prototype into a real public repo with persistence, tests, CI, and documentation. **Does not** include hosting the agent itself for strangers — that's sub-project B.
 
+## Status
+
+✅ **Shipped 2026-05-05** at https://github.com/christophercorbin/infra-prototypes. CI green on initial push. The real-AWS smoke test (`scripts/smoke-test.sh`) is left as a manual run — defer until shell has `ANTHROPIC_API_KEY` + AWS creds + uvicorn installed.
+
 ## Goals
 
 Turn `INFRA prototypes/` into a public GitHub repo that:
