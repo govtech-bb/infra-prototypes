@@ -55,12 +55,15 @@ async def upload_files_endpoint(
 
     saved = []
     for f in files:
-        # NOTE: Path stripping bug fixed in Task 4.
-        safe_path = Path(upload_dir) / Path(f.filename).name
+        filename = f.filename or ""
+        parts = Path(filename).parts
+        if not parts or any(p in ("..", "") or p.startswith("/") for p in parts):
+            raise HTTPException(400, f"Invalid filename: {filename!r}")
+        safe_path = Path(upload_dir) / filename
         safe_path.parent.mkdir(parents=True, exist_ok=True)
         content = await f.read()
         safe_path.write_bytes(content)
-        saved.append(f.filename)
+        saved.append(filename)
 
     session.files = session.files + saved
     store.save(session)
