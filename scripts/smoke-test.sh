@@ -6,7 +6,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT="smoke-$(date +%s)"
+PROJECT="smoke-$(date +%s)-$$"
 ENV="smoke"
 PORT=8765
 SERVER_PID=""
@@ -28,6 +28,7 @@ require() { command -v "$1" >/dev/null || { echo "missing: $1"; exit 2; }; }
 require curl
 require tofu
 require python3
+require uvicorn
 
 [ -n "${ANTHROPIC_API_KEY:-}" ] || { echo "ANTHROPIC_API_KEY required"; exit 2; }
 
