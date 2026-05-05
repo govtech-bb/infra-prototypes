@@ -37,7 +37,7 @@ Rules:
 - Be concise. One question at a time.
 - Derive project_name from the site title (lowercase slug, hyphens, max 20 chars).
 - Use env="proto" for all prototype deployments unless the user says otherwise.
-- If a tool returns an error, explain it simply and suggest what to check.
+- If a tool result contains a `summary` field, that means the call failed. Tell the user the summary in plain language and offer to share the `details` if they ask. Suggest what to check based on the summary.
 - Never ask for AWS credentials — assume they're configured in the environment.
 """
 

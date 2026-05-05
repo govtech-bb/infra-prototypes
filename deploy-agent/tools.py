@@ -5,6 +5,7 @@ Each function maps to a tool Claude can call during a deployment conversation.
 
 import os
 import json
+import re
 import subprocess
 import mimetypes
 import boto3
@@ -15,6 +16,29 @@ from pathlib import Path
 _HERE = Path(__file__).parent
 INFRA_DIR = os.environ.get("INFRA_DIR", str(_HERE.parent / "infra"))
 STACK_DIR = os.path.join(INFRA_DIR, "stacks", "static-website")
+
+# ── Error classification ──────────────────────────────────────────────────────
+
+_ERROR_PATTERNS: list[tuple[str, str]] = [
+    (r"NoCredentialProviders|Unable to locate credentials",
+     "No AWS credentials found. Set AWS_PROFILE or AWS_ACCESS_KEY_ID."),
+    (r"AccessDenied|UnauthorizedOperation|is not authorized to",
+     "AWS credentials lack permission for this operation. Check IAM."),
+    (r"BucketAlreadyOwnedByYou|BucketAlreadyExists",
+     "A bucket with this name already exists in your account. Pick a different project_name."),
+    (r"Error: error configuring",
+     "AWS configuration error — check your region and credentials."),
+]
+
+
+def _classify_error(stderr: str) -> dict:
+    """Map raw stderr to a {summary, details} dict for the agent to surface."""
+    details = stderr[-2000:]
+    for pattern, summary in _ERROR_PATTERNS:
+        if re.search(pattern, stderr):
+            return {"summary": summary, "details": details}
+    return {"summary": "Deployment failed — see details.", "details": details}
+
 
 # ── Tool Definitions (passed to Claude) ───────────────────────────────────────
 TOOL_DEFINITIONS = [
@@ -99,7 +123,7 @@ def deploy_infrastructure(
             cwd=STACK_DIR, capture_output=True, text=True, timeout=120
         )
         if r.returncode != 0:
-            return {"error": f"tofu init failed:\n{r.stderr[-2000:]}"}
+            return _classify_error(r.stderr)
 
         # 2. Create or select workspace (isolates state per deployment)
         workspace = f"{project_name}-{env}"
@@ -126,7 +150,7 @@ def deploy_infrastructure(
             cwd=STACK_DIR, capture_output=True, text=True, timeout=600
         )
         if r.returncode != 0:
-            return {"error": f"tofu apply failed:\n{r.stderr[-3000:]}"}
+            return _classify_error(r.stderr)
 
         # 4. Read outputs
         out = subprocess.run(
@@ -139,12 +163,14 @@ def deploy_infrastructure(
             "bucket_name":              outputs["bucket_name"]["value"],
             "site_url":                 outputs["site_url"]["value"],
             "cloudfront_distribution_id": outputs["cloudfront_distribution_id"]["value"],
+            "project_name":             project_name,
+            "env":                      env,
         }
 
     except subprocess.TimeoutExpired:
-        return {"error": "Deployment timed out after 10 minutes."}
+        return {"summary": "Deployment timed out after 10 minutes.", "details": ""}
     except Exception as e:
-        return {"error": str(e)}
+        return {"summary": "Deployment failed unexpectedly.", "details": str(e)}
 
 
 def upload_files(
@@ -156,7 +182,7 @@ def upload_files(
     """Upload files from the session's temp directory to S3, then invalidate CloudFront."""
     upload_dir = session.upload_dir
     if not upload_dir or not Path(upload_dir).exists():
-        return {"error": "No uploaded files found for this session."}
+        return {"summary": "No uploaded files found for this session.", "details": ""}
 
     try:
         s3 = boto3.client("s3")
@@ -195,7 +221,7 @@ def upload_files(
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"summary": "File upload failed.", "details": str(e)}
 
 
 def execute_tool(name: str, inputs: dict, session_id: str, session: dict) -> dict:
