@@ -88,11 +88,13 @@ def run_agent_loop(client: anthropic.Anthropic, session: Session) -> str:
                 if deploy_succeeded:
                     session.deployment = result
 
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": json.dumps(result),
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps(result),
+                    }
+                )
 
             session.messages.append({"role": "user", "content": tool_results})
 

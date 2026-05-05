@@ -1,10 +1,8 @@
 """Tests for sessions.SqliteSessionStore."""
 
-import json
-
 import pytest
 
-from sessions import Session, SqliteSessionStore
+from sessions import SqliteSessionStore
 
 
 @pytest.fixture
@@ -67,6 +65,7 @@ def test_deployment_denormalizes_project_and_env(store, tmp_path):
 
     # Inspect the raw row to confirm denormalized columns are populated.
     import sqlite3
+
     db_path = tmp_path / "sessions.db"
     conn = sqlite3.connect(db_path)
     row = conn.execute(

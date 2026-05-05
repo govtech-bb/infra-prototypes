@@ -41,11 +41,15 @@ def test_deploy_infrastructure_init_failure_returns_summary(mock_run):
         if cmd[1] == "init":
             return MagicMock(returncode=1, stderr="NoCredentialProviders: ...")
         raise AssertionError(f"Unexpected subprocess call after init failure: {cmd}")
+
     mock_run.side_effect = fake_run
 
     result = tools.deploy_infrastructure(
-        project_name="x", env="proto",
-        site_title="X", owner_name="Y", owner_email="z@example.com",
+        project_name="x",
+        env="proto",
+        site_title="X",
+        owner_name="Y",
+        owner_email="z@example.com",
     )
     assert "summary" in result
     assert "details" in result
@@ -59,11 +63,15 @@ def test_deploy_infrastructure_apply_failure_returns_summary(mock_run):
         if cmd[1] == "apply":
             return MagicMock(returncode=1, stderr="AccessDenied: not authorized to s3:CreateBucket")
         return MagicMock(returncode=0, stderr="", stdout="{}")
+
     mock_run.side_effect = fake_run
 
     result = tools.deploy_infrastructure(
-        project_name="x", env="proto",
-        site_title="X", owner_name="Y", owner_email="z@example.com",
+        project_name="x",
+        env="proto",
+        site_title="X",
+        owner_name="Y",
+        owner_email="z@example.com",
     )
     assert "summary" in result
     assert "permission" in result["summary"].lower() or "credentials" in result["summary"].lower()
@@ -73,17 +81,25 @@ def test_deploy_infrastructure_apply_failure_returns_summary(mock_run):
 def test_deploy_infrastructure_happy_path_returns_outputs(mock_run):
     def fake_run(cmd, **kwargs):
         if cmd[1] == "output":
-            return MagicMock(returncode=0, stdout='''{
+            return MagicMock(
+                returncode=0,
+                stdout="""{
               "bucket_name": {"value": "x-proto-static"},
               "site_url": {"value": "https://d.cloudfront.net"},
               "cloudfront_distribution_id": {"value": "ABC"}
-            }''', stderr="")
+            }""",
+                stderr="",
+            )
         return MagicMock(returncode=0, stderr="", stdout="")
+
     mock_run.side_effect = fake_run
 
     result = tools.deploy_infrastructure(
-        project_name="x", env="proto",
-        site_title="X", owner_name="Y", owner_email="z@example.com",
+        project_name="x",
+        env="proto",
+        site_title="X",
+        owner_name="Y",
+        owner_email="z@example.com",
     )
     assert "summary" not in result
     assert result["bucket_name"] == "x-proto-static"
@@ -104,8 +120,8 @@ def aws_credentials(monkeypatch):
 
 
 def test_upload_files_uploads_nested_with_correct_key(aws_credentials, tmp_path):
-    from moto import mock_aws
     import boto3
+    from moto import mock_aws
 
     from sessions import Session
 
@@ -147,9 +163,12 @@ def test_upload_files_uploads_nested_with_correct_key(aws_credentials, tmp_path)
 
 def test_upload_files_returns_summary_when_dir_missing(tmp_path):
     from sessions import Session
+
     session = Session(session_id="s", upload_dir=str(tmp_path / "does-not-exist"))
     result = tools.upload_files(
-        bucket_name="b", distribution_id="d", session=session,
+        bucket_name="b",
+        distribution_id="d",
+        session=session,
     )
     assert "summary" in result
     assert "No uploaded files" in result["summary"]

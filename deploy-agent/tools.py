@@ -3,13 +3,14 @@ Tool implementations for the INFRA Deploy Agent.
 Each function maps to a tool Claude can call during a deployment conversation.
 """
 
-import os
 import json
+import mimetypes
+import os
 import re
 import subprocess
-import mimetypes
-import boto3
 from pathlib import Path
+
+import boto3
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 # Resolve infra directory relative to this file: deploy-agent/ → infra/
@@ -20,14 +21,19 @@ STACK_DIR = os.path.join(INFRA_DIR, "stacks", "static-website")
 # ── Error classification ──────────────────────────────────────────────────────
 
 _ERROR_PATTERNS: list[tuple[str, str]] = [
-    (r"NoCredentialProviders|Unable to locate credentials",
-     "No AWS credentials found. Set AWS_PROFILE or AWS_ACCESS_KEY_ID."),
-    (r"BucketAlreadyOwnedByYou|BucketAlreadyExists",
-     "A bucket with this name already exists in your account. Pick a different project_name."),
-    (r"AccessDenied|UnauthorizedOperation|is not authorized to",
-     "AWS credentials lack permission for this operation. Check IAM."),
-    (r"Error: error configuring",
-     "AWS configuration error — check your region and credentials."),
+    (
+        r"NoCredentialProviders|Unable to locate credentials",
+        "No AWS credentials found. Set AWS_PROFILE or AWS_ACCESS_KEY_ID.",
+    ),
+    (
+        r"BucketAlreadyOwnedByYou|BucketAlreadyExists",
+        "A bucket with this name already exists in your account. Pick a different project_name.",
+    ),
+    (
+        r"AccessDenied|UnauthorizedOperation|is not authorized to",
+        "AWS credentials lack permission for this operation. Check IAM.",
+    ),
+    (r"Error: error configuring", "AWS configuration error — check your region and credentials."),
 ]
 
 
@@ -54,31 +60,28 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "project_name": {
                     "type": "string",
-                    "description": "URL-safe slug (lowercase, hyphens only, max 20 chars). Derived from the site title."
+                    "description": "URL-safe slug (lowercase, hyphens only, max 20 chars). Derived from the site title.",
                 },
                 "env": {
                     "type": "string",
-                    "description": "Deployment environment label, e.g. 'proto', 'dev', 'staging'."
+                    "description": "Deployment environment label, e.g. 'proto', 'dev', 'staging'.",
                 },
                 "site_title": {
                     "type": "string",
-                    "description": "Human-readable website title, used as an AWS resource tag."
+                    "description": "Human-readable website title, used as an AWS resource tag.",
                 },
-                "owner_name": {
-                    "type": "string",
-                    "description": "Full name of the site owner."
-                },
+                "owner_name": {"type": "string", "description": "Full name of the site owner."},
                 "owner_email": {
                     "type": "string",
-                    "description": "Email address of the site owner."
+                    "description": "Email address of the site owner.",
                 },
                 "is_spa": {
                     "type": "boolean",
-                    "description": "True if this is a single-page app (React, Vue, etc.) that needs 404→index.html routing."
-                }
+                    "description": "True if this is a single-page app (React, Vue, etc.) that needs 404→index.html routing.",
+                },
             },
-            "required": ["project_name", "env", "site_title", "owner_name", "owner_email"]
-        }
+            "required": ["project_name", "env", "site_title", "owner_name", "owner_email"],
+        },
     },
     {
         "name": "upload_files",
@@ -91,20 +94,21 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "bucket_name": {
                     "type": "string",
-                    "description": "S3 bucket name returned by deploy_infrastructure."
+                    "description": "S3 bucket name returned by deploy_infrastructure.",
                 },
                 "distribution_id": {
                     "type": "string",
-                    "description": "CloudFront distribution ID returned by deploy_infrastructure."
-                }
+                    "description": "CloudFront distribution ID returned by deploy_infrastructure.",
+                },
             },
-            "required": ["bucket_name", "distribution_id"]
-        }
-    }
+            "required": ["bucket_name", "distribution_id"],
+        },
+    },
 ]
 
 
 # ── Tool Implementations ───────────────────────────────────────────────────────
+
 
 def deploy_infrastructure(
     project_name: str,
@@ -113,33 +117,35 @@ def deploy_infrastructure(
     owner_name: str,
     owner_email: str,
     is_spa: bool = False,
-    **_
+    **_,
 ) -> dict:
     """Run tofu init + apply for the static-website stack."""
     try:
         # 1. Init
         r = subprocess.run(
             ["tofu", "init", "-input=false"],
-            cwd=STACK_DIR, capture_output=True, text=True, timeout=120
+            cwd=STACK_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if r.returncode != 0:
             return _classify_error(r.stderr)
 
         # 2. Create or select workspace (isolates state per deployment)
         workspace = f"{project_name}-{env}"
+        subprocess.run(["tofu", "workspace", "new", workspace], cwd=STACK_DIR, capture_output=True)
         subprocess.run(
-            ["tofu", "workspace", "new", workspace],
-            cwd=STACK_DIR, capture_output=True
-        )
-        subprocess.run(
-            ["tofu", "workspace", "select", workspace],
-            cwd=STACK_DIR, capture_output=True
+            ["tofu", "workspace", "select", workspace], cwd=STACK_DIR, capture_output=True
         )
 
         # 3. Apply
         r = subprocess.run(
             [
-                "tofu", "apply", "-auto-approve", "-input=false",
+                "tofu",
+                "apply",
+                "-auto-approve",
+                "-input=false",
                 f"-var=project_name={project_name}",
                 f"-var=env={env}",
                 f"-var=site_title={site_title}",
@@ -147,24 +153,26 @@ def deploy_infrastructure(
                 f"-var=owner_email={owner_email}",
                 f"-var=is_spa={'true' if is_spa else 'false'}",
             ],
-            cwd=STACK_DIR, capture_output=True, text=True, timeout=600
+            cwd=STACK_DIR,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
         if r.returncode != 0:
             return _classify_error(r.stderr)
 
         # 4. Read outputs
         out = subprocess.run(
-            ["tofu", "output", "-json"],
-            cwd=STACK_DIR, capture_output=True, text=True
+            ["tofu", "output", "-json"], cwd=STACK_DIR, capture_output=True, text=True
         )
         outputs = json.loads(out.stdout)
 
         return {
-            "bucket_name":              outputs["bucket_name"]["value"],
-            "site_url":                 outputs["site_url"]["value"],
+            "bucket_name": outputs["bucket_name"]["value"],
+            "site_url": outputs["site_url"]["value"],
             "cloudfront_distribution_id": outputs["cloudfront_distribution_id"]["value"],
-            "project_name":             project_name,
-            "env":                      env,
+            "project_name": project_name,
+            "env": env,
         }
 
     except subprocess.TimeoutExpired:
@@ -173,12 +181,7 @@ def deploy_infrastructure(
         return {"summary": "Deployment failed unexpectedly.", "details": str(e)}
 
 
-def upload_files(
-    bucket_name: str,
-    distribution_id: str,
-    session,
-    **_
-) -> dict:
+def upload_files(bucket_name: str, distribution_id: str, session, **_) -> dict:
     """Upload files from the session's temp directory to S3, then invalidate CloudFront."""
     upload_dir = session.upload_dir
     if not upload_dir or not Path(upload_dir).exists():
@@ -198,10 +201,7 @@ def upload_files(
             content_type = content_type or "application/octet-stream"
 
             s3.upload_file(
-                str(file_path),
-                bucket_name,
-                key,
-                ExtraArgs={"ContentType": content_type}
+                str(file_path), bucket_name, key, ExtraArgs={"ContentType": content_type}
             )
             uploaded.append(key)
 
@@ -210,15 +210,11 @@ def upload_files(
             DistributionId=distribution_id,
             InvalidationBatch={
                 "Paths": {"Quantity": 1, "Items": ["/*"]},
-                "CallerReference": f"deploy-agent-{distribution_id}"
-            }
+                "CallerReference": f"deploy-agent-{distribution_id}",
+            },
         )
 
-        return {
-            "uploaded_count": len(uploaded),
-            "files": uploaded,
-            "cache_invalidated": True
-        }
+        return {"uploaded_count": len(uploaded), "files": uploaded, "cache_invalidated": True}
 
     except Exception as e:
         return {"summary": "File upload failed.", "details": str(e)}

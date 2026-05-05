@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List
 
 import anthropic
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -45,7 +44,8 @@ def new_session() -> dict:
 
 @app.post("/api/upload/{session_id}")
 async def upload_files_endpoint(
-    session_id: str, files: List[UploadFile] = File(...)
+    session_id: str,
+    files: list[UploadFile] = File(default=...),  # noqa: B008
 ) -> dict:
     session = _get_or_404(session_id)
 

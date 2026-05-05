@@ -1,0 +1,3 @@
+pytest==9.0.3
+moto[s3,cloudfront]==5.2.0
+ruff==0.15.12

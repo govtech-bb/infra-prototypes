@@ -27,9 +27,7 @@ def _response(content, stop_reason):
 
 def test_happy_path_returns_text(monkeypatch):
     client = MagicMock()
-    client.messages.create.return_value = _response(
-        [_block("text", text="all done")], "end_turn"
-    )
+    client.messages.create.return_value = _response([_block("text", text="all done")], "end_turn")
     session = Session(session_id="s1")
     session.messages.append({"role": "user", "content": "hi"})
 
@@ -51,8 +49,11 @@ def test_iteration_cap_hits_safety_limit(monkeypatch):
     )
 
     # Patch execute_tool to return a benign no-op so the loop continues.
-    monkeypatch.setattr(agent, "execute_tool",
-                        lambda name, inputs, session_id, session: {"summary": "noop", "details": ""})
+    monkeypatch.setattr(
+        agent,
+        "execute_tool",
+        lambda name, inputs, session_id, session: {"summary": "noop", "details": ""},
+    )
 
     session = Session(session_id="s1")
     result = agent.run_agent_loop(client, session)
@@ -68,10 +69,14 @@ def test_tool_use_round_trip_caches_deployment(monkeypatch):
         _response([_block("text", text="✅ Live!")], "end_turn"),
     ]
     monkeypatch.setattr(
-        agent, "execute_tool",
+        agent,
+        "execute_tool",
         lambda name, inputs, session_id, session: {
-            "bucket_name": "b", "site_url": "https://x", "cloudfront_distribution_id": "C",
-            "project_name": "p", "env": "proto",
+            "bucket_name": "b",
+            "site_url": "https://x",
+            "cloudfront_distribution_id": "C",
+            "project_name": "p",
+            "env": "proto",
         },
     )
 
@@ -90,7 +95,8 @@ def test_tool_failure_does_not_cache_deployment(monkeypatch):
         _response([_block("text", text="that failed")], "end_turn"),
     ]
     monkeypatch.setattr(
-        agent, "execute_tool",
+        agent,
+        "execute_tool",
         lambda name, inputs, session_id, session: {"summary": "boom", "details": "..."},
     )
 
