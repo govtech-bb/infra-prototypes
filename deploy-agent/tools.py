@@ -150,11 +150,11 @@ def deploy_infrastructure(
 def upload_files(
     bucket_name: str,
     distribution_id: str,
-    session: dict,
+    session,
     **_
 ) -> dict:
     """Upload files from the session's temp directory to S3, then invalidate CloudFront."""
-    upload_dir = session.get("upload_dir")
+    upload_dir = session.upload_dir
     if not upload_dir or not Path(upload_dir).exists():
         return {"error": "No uploaded files found for this session."}
 
