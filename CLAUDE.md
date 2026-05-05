@@ -35,14 +35,14 @@ The `upload` target reads `bucket_name` and `cloudfront_distribution_id` from `t
 
 ## Architecture
 
-### Agent loop (`deploy-agent/app.py`)
-`run_agent_loop` is a hand-rolled tool-use loop with a 15-iteration safety cap (`app.py:79`). Each turn:
+### Agent loop (`deploy-agent/agent.py`)
+`run_agent_loop` is a hand-rolled tool-use loop with `MAX_AGENT_ITERATIONS = 15` (overridable in tests). Each turn:
 1. Calls `client.messages.create` with the cumulative `session["messages"]`.
 2. Appends the assistant's `content` blocks to history.
 3. On `stop_reason == "end_turn"`, returns the first text block.
 4. On `stop_reason == "tool_use"`, executes every `tool_use` block via `tools.execute_tool`, packages results as a single `user` message of `tool_result` blocks, and loops.
 
-Sessions live in an in-memory `dict` keyed by UUID (`app.py:25`). Restarting the server drops all history — fine for a prototype, swap for Redis if needed (note in code).
+Sessions are persisted in a SQLite file at `deploy-agent/data/sessions.db` via `SqliteSessionStore` in `sessions.py`. Schema is single-table; `project_name` and `env` are denormalized columns extracted from `deployment` so `scripts/destroy_all.py` can `SELECT` them without parsing JSON. Override the path with `DEPLOY_AGENT_DB` env var (used by tests).
 
 When files are uploaded via `/api/upload/{session_id}`, the file list is **injected once** into the next user message as `[Uploaded files: …]` (`app.py:170-177`). The agent uses that as its cue to call `upload_files` after `deploy_infrastructure`.
 
@@ -77,4 +77,4 @@ Tags flow from `locals.common_tags` in the stack and are applied via the AWS pro
 - The agent calls `tofu`, not `terraform` — make sure OpenTofu is installed and on PATH.
 - `tofu workspace new` is run unconditionally and ignores its non-zero exit code (workspace already exists is expected). If you see weird state, check `tofu workspace list` in `infra/stacks/static-website/`.
 - ACM certs for CloudFront **must** be in `us-east-1` regardless of `aws_region` — see `acm_certificate_arn` in `variables.tf:65`.
-- File uploads in `/api/upload/{session_id}` use `Path(f.filename).name` (`app.py:152`), which **strips relative paths** like `dist/index.html` down to `index.html`. If you need to preserve directory structure for nested assets, that's where to fix it.
+- File uploads in `/api/upload/{session_id}` preserve relative paths and reject `..` traversal / absolute paths with HTTP 400. `examples/sample-site/assets/logo.svg` is the regression fixture — if you break path preservation, the smoke test will fail.
