@@ -37,6 +37,16 @@ def main() -> int:
         return 0
 
     print(f"Found {len(rows)} deployment(s) to destroy.")
+
+    # Ensure the stack is initialized — fresh checkouts have no .terraform/.
+    init = subprocess.run(
+        ["tofu", "init", "-input=false"],
+        cwd=STACK_DIR, capture_output=True, text=True,
+    )
+    if init.returncode != 0:
+        print(f"tofu init failed:\n{init.stderr.strip()}")
+        return 1
+
     failures = 0
     for session_id, project, env in rows:
         workspace = f"{project}-{env}"

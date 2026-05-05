@@ -52,7 +52,7 @@ Two tools, both synchronous and shell-based:
 - **`deploy_infrastructure`** runs `tofu init`, then `tofu workspace new/select <project>-<env>`, then `tofu apply` with `-var=` flags, then parses `tofu output -json` (`tools.py:85-147`). Workspaces isolate state per deployment — that's the only multi-tenant boundary, since `backend.tf` keeps state local.
 - **`upload_files`** uses `boto3` to `upload_file` everything under the session's `upload_dir`, guesses MIME types via `mimetypes`, then calls `cloudfront.create_invalidation` with `Paths: ["/*"]` (`tools.py:150-198`).
 
-Errors are returned as `{"error": "..."}` dicts (never raised) so the agent can surface them back to the user. Stderr is truncated to the last 2-3 KB.
+Tool failures return `{"summary": "...", "details": "..."}` dicts (never raised). The system prompt instructs the agent to report `summary` to the user and offer `details` if asked. `_classify_error` in `tools.py` maps tofu/AWS stderr to friendly summaries; `details` is the last 2 000 chars of stderr.
 
 ### Terraform stack (`infra/stacks/static-website/`)
 Composes two modules: `modules/s3-static-site` (private bucket + public-access-block, optional versioning) and `modules/cloudfront` (distribution + OAC, SPA mode toggles `custom_error_response` for 403/404 → `index.html`).
@@ -66,11 +66,11 @@ Tags flow from `locals.common_tags` in the stack and are applied via the AWS pro
 
 ## Conventions
 
-- **Default env** for agent-driven deploys is `proto` (per the system prompt in `app.py:48`); the `Makefile` defaults to `dev`. Don't mix them — they create different workspaces.
+- **Default env** for agent-driven deploys is `proto` (per `SYSTEM_PROMPT` in `agent.py`); the `Makefile` defaults to `dev`. Don't mix them — they create different workspaces.
 - **Bucket naming** is `${project_name}-${env}-static` (`modules/s3-static-site/main.tf:2`), so `project_name` collisions across envs are fine but cross-env collisions are not.
 - **`is_spa=true`** turns CloudFront 403/404s into 200s serving `index.html` — only enable for SPAs, otherwise it masks real 404s.
 - `price_class` defaults to `PriceClass_100` (US/EU edges only) for prototype cost.
-- The agent model is pinned to `claude-opus-4-6` in `app.py:81`. To change, edit there — no env override.
+- The agent model is pinned to `claude-opus-4-6` in `agent.py` (look for the `model=` kwarg in `client.messages.create`). To change, edit there — no env override.
 
 ## Things that will bite you
 
