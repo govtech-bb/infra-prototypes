@@ -17,6 +17,7 @@ def test_create_returns_session_with_uuid(store):
     s2 = store.create()
     assert s1.session_id != s2.session_id
     assert len(s1.session_id) == 36  # uuid4
+    assert store.get(s1.session_id) is not None
 
 
 def test_get_unknown_returns_none(store):

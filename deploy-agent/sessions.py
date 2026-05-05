@@ -6,7 +6,10 @@ implementation behind the same interface.
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
@@ -44,11 +47,6 @@ class InMemorySessionStore:
         self._sessions[session.session_id] = session
 
 
-import json
-import sqlite3
-from pathlib import Path
-
-
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
   session_id   TEXT PRIMARY KEY,
@@ -71,7 +69,7 @@ class SqliteSessionStore:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA)
+            conn.execute(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
@@ -85,7 +83,6 @@ class SqliteSessionStore:
                 "INSERT INTO sessions (session_id) VALUES (?)",
                 (session.session_id,),
             )
-            conn.commit()
         return session
 
     def get(self, session_id: str) -> Session | None:
@@ -135,4 +132,3 @@ class SqliteSessionStore:
                     env,
                 ),
             )
-            conn.commit()
