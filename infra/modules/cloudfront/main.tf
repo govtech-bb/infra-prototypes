@@ -55,16 +55,10 @@ resource "aws_cloudfront_distribution" "this" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = var.acm_certificate_arn == null ? true : false
-
-    dynamic "acm_certificate" {
-      for_each = var.acm_certificate_arn != null ? [1] : []
-      content {
-        acm_certificate_arn      = var.acm_certificate_arn
-        ssl_support_method       = "sni-only"
-        minimum_protocol_version = "TLSv1.2_2021"
-      }
-    }
+    cloudfront_default_certificate = var.acm_certificate_arn == null
+    acm_certificate_arn            = var.acm_certificate_arn
+    ssl_support_method             = var.acm_certificate_arn == null ? null : "sni-only"
+    minimum_protocol_version       = var.acm_certificate_arn == null ? null : "TLSv1.2_2021"
   }
 
   aliases = var.domain_names
