@@ -420,3 +420,113 @@ def test_deploy_default_index_html_when_present(mock_run, tmp_path):
     assert not any(arg.startswith("-var=index_document=") for arg in apply_cmd), (
         f"Unexpected index_document flag in {apply_cmd}"
     )
+
+
+# ── list_deployments tests ────────────────────────────────────────────────────
+
+
+def _seed_session(db_path, project_name, env, deployment):
+    """Helper: write a session row directly to a SQLite file."""
+    import json as _json
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+          session_id   TEXT PRIMARY KEY,
+          messages     TEXT NOT NULL DEFAULT '[]',
+          files        TEXT NOT NULL DEFAULT '[]',
+          upload_dir   TEXT,
+          deployment   TEXT,
+          project_name TEXT,
+          env          TEXT,
+          created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute(
+        "INSERT INTO sessions (session_id, deployment, project_name, env) VALUES (?, ?, ?, ?)",
+        (f"sess-{project_name}-{env}", _json.dumps(deployment), project_name, env),
+    )
+    conn.commit()
+    conn.close()
+
+
+@patch("tools.subprocess.run")
+def test_list_deployments_filters_to_active(mock_run, tmp_path, monkeypatch):
+    db_path = tmp_path / "sessions.db"
+    _seed_session(
+        db_path,
+        "alpha",
+        "proto",
+        {
+            "site_title": "Alpha",
+            "owner_name": "A",
+            "site_url": "https://a",
+            "project_name": "alpha",
+            "env": "proto",
+        },
+    )
+    _seed_session(
+        db_path,
+        "beta",
+        "proto",
+        {
+            "site_title": "Beta",
+            "owner_name": "B",
+            "site_url": "https://b",
+            "project_name": "beta",
+            "env": "proto",
+        },
+    )
+    _seed_session(
+        db_path,
+        "gamma",
+        "proto",
+        {
+            "site_title": "Gamma",
+            "owner_name": "G",
+            "site_url": "https://g",
+            "project_name": "gamma",
+            "env": "proto",
+        },
+    )
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
+
+    # tofu workspace list reports only alpha-proto and gamma-proto remain.
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout="  default\n* alpha-proto\n  gamma-proto\n",
+        stderr="",
+    )
+
+    result = tools.list_deployments(session=None)
+    assert "deployments" in result
+    names = {d["project_name"] for d in result["deployments"]}
+    assert names == {"alpha", "gamma"}
+
+
+def test_list_deployments_empty_when_no_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(tmp_path / "nope.db"))
+    result = tools.list_deployments(session=None)
+    assert result == {"deployments": []}
+
+
+@patch("tools.subprocess.run")
+def test_list_deployments_empty_when_no_deployed_sessions(mock_run, tmp_path, monkeypatch):
+    db_path = tmp_path / "sessions.db"
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+          session_id TEXT PRIMARY KEY, deployment TEXT, project_name TEXT, env TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
+
+    result = tools.list_deployments(session=None)
+    assert result == {"deployments": []}
+    mock_run.assert_not_called()  # Don't shell out to tofu when no rows.

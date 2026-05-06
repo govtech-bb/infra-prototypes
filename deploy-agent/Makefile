@@ -1,4 +1,4 @@
-.PHONY: check lint format test infra-validate destroy-all install install-dev
+.PHONY: check lint format test infra-validate destroy-list destroy-all install install-dev
 
 install:
 	pip3 install -r requirements.txt
@@ -24,6 +24,9 @@ infra-validate:
 	  tofu validate
 
 check: lint test infra-validate
+
+destroy-list:
+	python3 ../scripts/list_deployments.py
 
 destroy-all:
 	python3 ../scripts/destroy_all.py

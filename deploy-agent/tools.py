@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import re
+import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -121,6 +122,81 @@ def _preflight_uploads(upload_dir: str | None) -> tuple[dict | None, str | None]
     return (None, None)
 
 
+# ── Deployment listing ────────────────────────────────────────────────────────
+
+
+def _read_active_deployments() -> list[dict]:
+    """Read sessions.db and intersect with current tofu workspaces."""
+    db_path = Path(
+        os.environ.get(
+            "DEPLOY_AGENT_DB",
+            str(Path(__file__).parent / "data" / "sessions.db"),
+        )
+    )
+    if not db_path.exists():
+        return []
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT project_name, env, deployment, updated_at FROM sessions "
+            "WHERE deployment IS NOT NULL AND project_name IS NOT NULL"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    finally:
+        conn.close()
+    if not rows:
+        return []
+
+    # Intersect with tofu workspace list to drop destroyed-but-still-recorded.
+    ws = subprocess.run(
+        ["tofu", "workspace", "list"],
+        cwd=STACK_DIR,
+        capture_output=True,
+        text=True,
+    )
+    if ws.returncode != 0:
+        # If tofu isn't available, fall back to all recorded deployments.
+        active = {f"{r['project_name']}-{r['env']}" for r in rows}
+    else:
+        active = {
+            line.lstrip("* ").strip()
+            for line in ws.stdout.splitlines()
+            if line.strip() and line.strip() != "default"
+        }
+
+    deployments = []
+    for r in rows:
+        ws_name = f"{r['project_name']}-{r['env']}"
+        if ws_name not in active:
+            continue
+        try:
+            dep = json.loads(r["deployment"])
+        except (json.JSONDecodeError, TypeError):
+            dep = {}
+        deployments.append(
+            {
+                "project_name": r["project_name"],
+                "env": r["env"],
+                "site_title": dep.get("site_title", ""),
+                "owner_name": dep.get("owner_name", ""),
+                "site_url": dep.get("site_url", ""),
+                "updated_at": r["updated_at"],
+            }
+        )
+    return deployments
+
+
+def list_deployments(*, session=None, **_) -> dict:
+    """Tool: return every active static-site deployment."""
+    try:
+        return {"deployments": _read_active_deployments()}
+    except Exception as e:
+        return {"summary": "Could not list deployments.", "details": str(e)}
+
+
 # ── Tool Definitions (passed to Claude) ───────────────────────────────────────
 TOOL_DEFINITIONS = [
     {
@@ -182,6 +258,15 @@ TOOL_DEFINITIONS = [
             },
             "required": ["bucket_name", "distribution_id"],
         },
+    },
+    {
+        "name": "list_deployments",
+        "description": (
+            "List every active static-site deployment recorded for this user. "
+            "Read-only — no infrastructure changes. Use before destroy_infrastructure "
+            "when the user's request is ambiguous (e.g., 'destroy my old test site')."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
     },
 ]
 
@@ -254,8 +339,7 @@ def deploy_infrastructure(
 
         # 4. Read outputs
         out = subprocess.run(
-            ["tofu", "output", "-json"],
-            cwd=STACK_DIR, capture_output=True, text=True
+            ["tofu", "output", "-json"], cwd=STACK_DIR, capture_output=True, text=True
         )
         if out.returncode != 0:
             return _classify_error(out.stderr)
@@ -320,4 +404,6 @@ def execute_tool(name: str, inputs: dict, session_id: str, session) -> dict:
         return deploy_infrastructure(session=session, **inputs)
     elif name == "upload_files":
         return upload_files(session=session, **inputs)
+    elif name == "list_deployments":
+        return list_deployments(session=session, **inputs)
     return {"summary": f"Unknown tool: {name}", "details": ""}
