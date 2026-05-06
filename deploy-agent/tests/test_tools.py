@@ -265,6 +265,27 @@ def test_preflight_index_html_with_source_files_passes(tmp_path):
     assert idx is None
 
 
+def test_preflight_only_static_non_html_assets_passes(tmp_path):
+    # CSS / images / fonts only — no HTML, no source code. Let it through;
+    # caller defaults to "index.html" which won't exist, but tofu will provision
+    # the bucket and the user can fix it.
+    (tmp_path / "style.css").write_text("body{}")
+    (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n")
+    err, idx = tools._preflight_uploads(str(tmp_path))
+    assert err is None
+    assert idx is None
+
+
+def test_preflight_does_not_match_substring_in_filename(tmp_path):
+    # A file named *.tsx-migration.txt should NOT trigger the source-code branch
+    # because we match on suffix, not name.
+    (tmp_path / "notes-on-tsx-migration.txt").write_text("hello")
+    (tmp_path / "index.html").write_text("<html></html>")
+    err, idx = tools._preflight_uploads(str(tmp_path))
+    assert err is None
+    assert idx is None
+
+
 # ── deploy_infrastructure preflight integration ───────────────────────────────
 
 

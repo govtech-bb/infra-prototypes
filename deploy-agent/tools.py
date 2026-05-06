@@ -79,7 +79,7 @@ def _preflight_uploads(upload_dir: str | None) -> tuple[dict | None, str | None]
         )
 
     html_files = [p for p in files if p.suffix.lower() in (".html", ".htm")]
-    source_files = [p for p in files if _SOURCE_EXTENSIONS.search(p.name)]
+    source_files = [p for p in files if _SOURCE_EXTENSIONS.search(p.suffix)]
 
     if source_files and not html_files:
         sample = ", ".join(p.name for p in source_files[:10])
@@ -254,8 +254,11 @@ def deploy_infrastructure(
 
         # 4. Read outputs
         out = subprocess.run(
-            ["tofu", "output", "-json"], cwd=STACK_DIR, capture_output=True, text=True
+            ["tofu", "output", "-json"],
+            cwd=STACK_DIR, capture_output=True, text=True
         )
+        if out.returncode != 0:
+            return _classify_error(out.stderr)
         outputs = json.loads(out.stdout)
 
         return {
