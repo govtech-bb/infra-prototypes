@@ -213,3 +213,17 @@ def test_index_includes_markdown_renderer(client):
     # LLM-generated content).
     forbidden = "." + "innerHTML" + " ="
     assert forbidden not in body
+
+
+def test_typing_indicator_has_bajan_loading_messages(client):
+    r = client.get("/")
+    body = r.text
+    # The pool is named and seeded with a few signature phrases.
+    assert "BAJAN_LOADING_MESSAGES" in body
+    # A few specific phrases that confirm the pool is non-empty and authored.
+    assert "mauby" in body
+    assert "Cheese on bread" in body
+    assert "Wuh loss" in body
+    # The rotation loop is wired in.
+    assert "setInterval" in body
+    assert "clearInterval" in body
