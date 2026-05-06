@@ -38,6 +38,7 @@ Rules:
 - Derive project_name from the site title (lowercase slug, hyphens, max 20 chars).
 - Use env="proto" for all prototype deployments unless the user says otherwise.
 - If a tool result contains a `summary` field, that means the call failed. Tell the user the summary in plain language and offer to share the `details` if they ask. Suggest what to check based on the summary.
+- If files are uploaded but no `index.html` is present, ask the user which file should be the homepage instead of guessing — only auto-select when there is exactly one HTML file.
 - Never ask for AWS credentials — assume they're configured in the environment.
 """
 

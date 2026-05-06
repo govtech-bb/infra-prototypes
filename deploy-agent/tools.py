@@ -46,6 +46,81 @@ def _classify_error(stderr: str) -> dict:
     return {"summary": "Deployment failed — see details.", "details": details}
 
 
+# ── Upload preflight ──────────────────────────────────────────────────────────
+
+_SOURCE_EXTENSIONS = re.compile(r"\.(jsx|tsx|ts|vue|svelte|scss|sass|less)$", re.IGNORECASE)
+
+
+def _preflight_uploads(upload_dir: str | None) -> tuple[dict | None, str | None]:
+    """Inspect uploaded files before deploy.
+
+    Returns (error_dict, index_document):
+      - error_dict: {"summary", "details"} if deploy should be blocked, else None.
+      - index_document: filename to use as the homepage, or None (caller defaults
+        to "index.html"). Only set when auto-detected from a single non-index HTML.
+    """
+    if not upload_dir or not Path(upload_dir).exists():
+        return (
+            {
+                "summary": "No files uploaded yet — drag a folder into the chat first.",
+                "details": "",
+            },
+            None,
+        )
+
+    files = [p for p in Path(upload_dir).rglob("*") if p.is_file()]
+    if not files:
+        return (
+            {
+                "summary": "No files uploaded yet — drag a folder into the chat first.",
+                "details": "",
+            },
+            None,
+        )
+
+    html_files = [p for p in files if p.suffix.lower() in (".html", ".htm")]
+    source_files = [p for p in files if _SOURCE_EXTENSIONS.search(p.name)]
+
+    if source_files and not html_files:
+        sample = ", ".join(p.name for p in source_files[:10])
+        return (
+            {
+                "summary": (
+                    "Looks like source code, not a built site. Run 'npm run build' "
+                    "(or your project's build command) and upload the output folder "
+                    "(usually 'dist/' or 'build/')."
+                ),
+                "details": f"Found: {sample}",
+            },
+            None,
+        )
+
+    has_index = any(p.name.lower() == "index.html" for p in html_files)
+    if has_index:
+        return (None, None)
+
+    if len(html_files) == 1:
+        # Auto-select the single HTML file as the entry document.
+        return (None, html_files[0].name)
+
+    if len(html_files) > 1:
+        sample = ", ".join(p.name for p in html_files[:10])
+        return (
+            {
+                "summary": (
+                    "Multiple HTML files but no index.html. Tell me which one is the "
+                    "homepage (e.g., 'use home.html as the entry')."
+                ),
+                "details": f"Found: {sample}",
+            },
+            None,
+        )
+
+    # No HTML at all and no source files — let it through; tofu will create
+    # the bucket and the user will see the empty-bucket error if any.
+    return (None, None)
+
+
 # ── Tool Definitions (passed to Claude) ───────────────────────────────────────
 TOOL_DEFINITIONS = [
     {
@@ -78,6 +153,10 @@ TOOL_DEFINITIONS = [
                 "is_spa": {
                     "type": "boolean",
                     "description": "True if this is a single-page app (React, Vue, etc.) that needs 404→index.html routing.",
+                },
+                "index_document": {
+                    "type": "string",
+                    "description": "Filename to use as the website's homepage (e.g., 'index.html', 'home.html'). Optional — auto-detected from uploaded files when there is exactly one HTML file. Defaults to 'index.html'.",
                 },
             },
             "required": ["project_name", "env", "site_title", "owner_name", "owner_email"],
@@ -117,9 +196,18 @@ def deploy_infrastructure(
     owner_name: str,
     owner_email: str,
     is_spa: bool = False,
+    index_document: str | None = None,
+    *,
+    session=None,
     **_,
 ) -> dict:
     """Run tofu init + apply for the static-website stack."""
+    upload_dir = session.upload_dir if session is not None else None
+    preflight_error, auto_index = _preflight_uploads(upload_dir)
+    if preflight_error is not None:
+        return preflight_error
+    chosen_index = index_document or auto_index
+
     try:
         # 1. Init
         r = subprocess.run(
@@ -140,19 +228,22 @@ def deploy_infrastructure(
         )
 
         # 3. Apply
+        apply_cmd = [
+            "tofu",
+            "apply",
+            "-auto-approve",
+            "-input=false",
+            f"-var=project_name={project_name}",
+            f"-var=env={env}",
+            f"-var=site_title={site_title}",
+            f"-var=owner_name={owner_name}",
+            f"-var=owner_email={owner_email}",
+            f"-var=is_spa={'true' if is_spa else 'false'}",
+        ]
+        if chosen_index:
+            apply_cmd.append(f"-var=index_document={chosen_index}")
         r = subprocess.run(
-            [
-                "tofu",
-                "apply",
-                "-auto-approve",
-                "-input=false",
-                f"-var=project_name={project_name}",
-                f"-var=env={env}",
-                f"-var=site_title={site_title}",
-                f"-var=owner_name={owner_name}",
-                f"-var=owner_email={owner_email}",
-                f"-var=is_spa={'true' if is_spa else 'false'}",
-            ],
+            apply_cmd,
             cwd=STACK_DIR,
             capture_output=True,
             text=True,
@@ -220,10 +311,10 @@ def upload_files(bucket_name: str, distribution_id: str, session, **_) -> dict:
         return {"summary": "File upload failed.", "details": str(e)}
 
 
-def execute_tool(name: str, inputs: dict, session_id: str, session: dict) -> dict:
+def execute_tool(name: str, inputs: dict, session_id: str, session) -> dict:
     """Dispatch a tool call from the Claude agent."""
     if name == "deploy_infrastructure":
-        return deploy_infrastructure(**inputs)
+        return deploy_infrastructure(session=session, **inputs)
     elif name == "upload_files":
         return upload_files(session=session, **inputs)
     return {"summary": f"Unknown tool: {name}", "details": ""}
