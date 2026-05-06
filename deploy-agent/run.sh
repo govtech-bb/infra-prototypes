@@ -26,10 +26,18 @@ if [ -z "$AWS_PROFILE" ] && [ -z "$AWS_ACCESS_KEY_ID" ]; then
   echo "   Deployments will fail without valid AWS credentials."
 fi
 
+# Create / activate virtual environment
+VENV_DIR=".venv"
+if [ ! -d "$VENV_DIR" ]; then
+  echo "📦 Creating virtual environment..."
+  python3 -m venv "$VENV_DIR"
+fi
+source "$VENV_DIR/bin/activate"
+
 # Install deps if needed
-if ! python3 -c "import fastapi" 2>/dev/null; then
+if ! python3 -c "import fastapi" 2>/dev/null || ! python3 -c "import uvicorn" 2>/dev/null; then
   echo "📦 Installing dependencies..."
-  pip3 install -r requirements.txt --quiet
+  pip install -r requirements.txt --quiet
 fi
 
 echo ""
@@ -37,4 +45,4 @@ echo "⬡  INFRA Deploy Agent"
 echo "   Open http://localhost:8000 in your browser"
 echo ""
 
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
