@@ -286,6 +286,32 @@ def test_preflight_does_not_match_substring_in_filename(tmp_path):
     assert idx is None
 
 
+def test_preflight_rejects_duplicate_index(tmp_path):
+    (tmp_path / "index (1).html").write_text("<html></html>")
+    err, idx = tools._preflight_uploads(str(tmp_path))
+    assert err is not None
+    assert "browser-duplicate" in err["summary"].lower() or "(1)" in err["summary"]
+    assert "rename" in err["summary"].lower()
+    assert idx is None
+
+
+def test_preflight_rejects_duplicate_index_case_variants(tmp_path):
+    for name in ["Index (2).HTML", "index(1).htm", "INDEX  (3).html"]:
+        d = tmp_path / name.replace("/", "_").replace(" ", "_space_")
+        d.mkdir()
+        (d / name).write_text("<html></html>")
+        err, _ = tools._preflight_uploads(str(d))
+        assert err is not None, f"failed for {name!r}"
+        assert "rename" in err["summary"].lower(), f"failed for {name!r}"
+
+
+def test_preflight_allows_legitimate_index_html(tmp_path):
+    (tmp_path / "index.html").write_text("<html></html>")
+    err, idx = tools._preflight_uploads(str(tmp_path))
+    assert err is None
+    assert idx is None
+
+
 # ── deploy_infrastructure preflight integration ───────────────────────────────
 
 
@@ -510,6 +536,38 @@ def test_list_deployments_empty_when_no_db(tmp_path, monkeypatch):
     monkeypatch.setenv("DEPLOY_AGENT_DB", str(tmp_path / "nope.db"))
     result = tools.list_deployments(session=None)
     assert result == {"deployments": []}
+
+
+@patch("tools.subprocess.run")
+def test_list_deployments_returns_bucket_and_cf(mock_run, tmp_path, monkeypatch):
+    db_path = tmp_path / "sessions.db"
+    _seed_session(
+        db_path,
+        "alpha",
+        "proto",
+        {
+            "site_title": "Alpha",
+            "owner_name": "A",
+            "site_url": "https://a.cloudfront.net",
+            "bucket_name": "alpha-proto-static",
+            "cloudfront_distribution_id": "EABC123XYZ",
+            "project_name": "alpha",
+            "env": "proto",
+        },
+    )
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
+
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout="* alpha-proto\n",
+        stderr="",
+    )
+
+    result = tools.list_deployments(session=None)
+    assert len(result["deployments"]) == 1
+    d = result["deployments"][0]
+    assert d["bucket_name"] == "alpha-proto-static"
+    assert d["cloudfront_distribution_id"] == "EABC123XYZ"
 
 
 @patch("tools.subprocess.run")

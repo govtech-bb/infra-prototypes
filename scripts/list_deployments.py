@@ -22,13 +22,13 @@ def main() -> int:
         print("No active deployments.")
         return 0
 
-    print(f"{'project':<25} {'env':<10} {'site_title':<25} {'site_url'}")
-    print("-" * 90)
+    print(f"{'project':<25} {'env':<10} {'bucket':<30} {'site_url'}")
+    print("-" * 110)
     for d in deployments:
         print(
             f"{d['project_name']:<25} "
             f"{d['env']:<10} "
-            f"{d['site_title']:<25.25} "
+            f"{d['bucket_name']:<30.30} "
             f"{d['site_url']}"
         )
     return 0

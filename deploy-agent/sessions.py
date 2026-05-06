@@ -21,6 +21,7 @@ class Session:
     files: list[str] = field(default_factory=list)
     upload_dir: str | None = None
     deployment: dict | None = None
+    last_injected_file_count: int = 0
 
 
 class SessionStore(Protocol):
@@ -49,15 +50,16 @@ class InMemorySessionStore:
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
-  session_id   TEXT PRIMARY KEY,
-  messages     TEXT NOT NULL DEFAULT '[]',
-  files        TEXT NOT NULL DEFAULT '[]',
-  upload_dir   TEXT,
-  deployment   TEXT,
-  project_name TEXT,
-  env          TEXT,
-  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  session_id               TEXT PRIMARY KEY,
+  messages                 TEXT NOT NULL DEFAULT '[]',
+  files                    TEXT NOT NULL DEFAULT '[]',
+  upload_dir               TEXT,
+  deployment               TEXT,
+  project_name             TEXT,
+  env                      TEXT,
+  last_injected_file_count INTEGER NOT NULL DEFAULT 0,
+  created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -70,6 +72,13 @@ class SqliteSessionStore:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute(_SCHEMA)
+            try:
+                conn.execute(
+                    "ALTER TABLE sessions ADD COLUMN "
+                    "last_injected_file_count INTEGER NOT NULL DEFAULT 0"
+                )
+            except sqlite3.OperationalError:
+                pass
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
@@ -100,6 +109,7 @@ class SqliteSessionStore:
             files=json.loads(row["files"]),
             upload_dir=row["upload_dir"],
             deployment=deployment,
+            last_injected_file_count=row["last_injected_file_count"] or 0,
         )
 
     def save(self, session: Session) -> None:
@@ -111,16 +121,18 @@ class SqliteSessionStore:
                 """
                 INSERT INTO sessions (
                     session_id, messages, files, upload_dir,
-                    deployment, project_name, env, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    deployment, project_name, env,
+                    last_injected_file_count, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(session_id) DO UPDATE SET
-                    messages    = excluded.messages,
-                    files       = excluded.files,
-                    upload_dir  = excluded.upload_dir,
-                    deployment  = excluded.deployment,
-                    project_name= excluded.project_name,
-                    env         = excluded.env,
-                    updated_at  = CURRENT_TIMESTAMP
+                    messages                 = excluded.messages,
+                    files                    = excluded.files,
+                    upload_dir               = excluded.upload_dir,
+                    deployment               = excluded.deployment,
+                    project_name             = excluded.project_name,
+                    env                      = excluded.env,
+                    last_injected_file_count = excluded.last_injected_file_count,
+                    updated_at               = CURRENT_TIMESTAMP
                 """,
                 (
                     session.session_id,
@@ -130,5 +142,6 @@ class SqliteSessionStore:
                     deployment_json,
                     project_name,
                     env,
+                    session.last_injected_file_count,
                 ),
             )

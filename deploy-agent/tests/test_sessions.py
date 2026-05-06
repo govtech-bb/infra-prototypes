@@ -85,3 +85,22 @@ def test_save_is_idempotent(store):
 
     loaded = store.get(s.session_id)
     assert len(loaded.messages) == 2
+
+
+def test_last_injected_file_count_round_trips(store):
+    s = store.create()
+    assert s.last_injected_file_count == 0
+    s.last_injected_file_count = 3
+    store.save(s)
+
+    loaded = store.get(s.session_id)
+    assert loaded.last_injected_file_count == 3
+
+
+def test_alter_table_idempotent_on_existing_db(tmp_path):
+    SqliteSessionStore(tmp_path / "sessions.db")
+    store2 = SqliteSessionStore(tmp_path / "sessions.db")
+    s = store2.create()
+    s.last_injected_file_count = 5
+    store2.save(s)
+    assert store2.get(s.session_id).last_injected_file_count == 5

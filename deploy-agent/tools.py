@@ -50,6 +50,7 @@ def _classify_error(stderr: str) -> dict:
 # ── Upload preflight ──────────────────────────────────────────────────────────
 
 _SOURCE_EXTENSIONS = re.compile(r"\.(jsx|tsx|ts|vue|svelte|scss|sass|less)$", re.IGNORECASE)
+_DUPLICATE_DOWNLOAD = re.compile(r"^index\s*\(\d+\)\.html?$", re.IGNORECASE)
 
 
 def _preflight_uploads(upload_dir: str | None) -> tuple[dict | None, str | None]:
@@ -74,6 +75,22 @@ def _preflight_uploads(upload_dir: str | None) -> tuple[dict | None, str | None]
         return (
             {
                 "summary": "No files uploaded yet — drag a folder into the chat first.",
+                "details": "",
+            },
+            None,
+        )
+
+    duplicate_index = next(
+        (p for p in files if _DUPLICATE_DOWNLOAD.match(p.name)),
+        None,
+    )
+    if duplicate_index is not None:
+        return (
+            {
+                "summary": (
+                    f"Your homepage is named '{duplicate_index.name}' — looks like a "
+                    "browser-duplicate download. Rename it to 'index.html' and upload again."
+                ),
                 "details": "",
             },
             None,
@@ -188,6 +205,8 @@ def _read_active_deployments() -> list[dict]:
                 "site_title": dep.get("site_title", ""),
                 "owner_name": dep.get("owner_name", ""),
                 "site_url": dep.get("site_url", ""),
+                "bucket_name": dep.get("bucket_name", ""),
+                "cloudfront_distribution_id": dep.get("cloudfront_distribution_id", ""),
                 "updated_at": r["updated_at"],
             }
         )

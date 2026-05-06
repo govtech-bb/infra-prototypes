@@ -76,14 +76,16 @@ def chat(req: ChatRequest) -> ChatResponse:
     session = _get_or_404(req.session_id)
 
     user_content = req.message
-    already_injected = any(
-        "[Uploaded files:" in str(m.get("content", ""))
-        for m in session.messages
-        if isinstance(m, dict)
-    )
-    if session.files and not already_injected:
-        file_list = ", ".join(session.files)
-        user_content = f"{req.message}\n\n[Uploaded files: {file_list}]"
+    last_announced = session.last_injected_file_count
+    current_count = len(session.files)
+    if current_count > last_announced:
+        new_files = session.files[last_announced:]
+        file_list = ", ".join(new_files)
+        if last_announced == 0:
+            user_content = f"{req.message}\n\n[Uploaded files: {file_list}]"
+        else:
+            user_content = f"{req.message}\n\n[Newly uploaded: {file_list}]"
+        session.last_injected_file_count = current_count
 
     session.messages.append({"role": "user", "content": user_content})
     reply = run_agent_loop(client, session)
