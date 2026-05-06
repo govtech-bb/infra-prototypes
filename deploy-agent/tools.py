@@ -202,6 +202,137 @@ def list_deployments(*, session=None, **_) -> dict:
         return {"summary": "Could not list deployments.", "details": str(e)}
 
 
+# ── Destroy ───────────────────────────────────────────────────────────────────
+
+
+def _find_deployment_record(project_name: str, env: str) -> dict | None:
+    """Look up sessions.db for a deployment matching project_name + env."""
+    db_path = Path(
+        os.environ.get(
+            "DEPLOY_AGENT_DB",
+            str(Path(__file__).parent / "data" / "sessions.db"),
+        )
+    )
+    if not db_path.exists():
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT deployment FROM sessions "
+            "WHERE project_name = ? AND env = ? AND deployment IS NOT NULL "
+            "ORDER BY updated_at DESC LIMIT 1",
+            (project_name, env),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    try:
+        return json.loads(row["deployment"])
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _maybe_clear_session_deployment(session, project_name: str, env: str) -> None:
+    """If the current session's deployment matches the destroyed (project, env), clear it."""
+    if session is None or session.deployment is None:
+        return
+    if (
+        session.deployment.get("project_name") == project_name
+        and session.deployment.get("env") == env
+    ):
+        session.deployment = None
+
+
+def destroy_infrastructure(
+    project_name: str,
+    env: str,
+    confirm: bool = False,
+    *,
+    session=None,
+    **_,
+) -> dict:
+    """Two-phase destroy. confirm=False returns a preview; confirm=True runs tofu destroy."""
+    record = _find_deployment_record(project_name, env)
+    if record is None:
+        return {
+            "summary": (f"No record of '{project_name}-{env}'. Run list_deployments first."),
+            "details": "",
+        }
+
+    if not confirm:
+        bucket = record.get("bucket_name", "?")
+        site = record.get("site_url", "?")
+        owner = record.get("owner_name", "?")
+        return {
+            "preview": True,
+            "message": (
+                f"Will destroy {project_name}-{env} (bucket: {bucket}, site: {site}, "
+                f"owner: {owner}). Reply 'yes destroy it' to proceed."
+            ),
+            "deployment": record,
+        }
+
+    # confirm=True: actually destroy
+    try:
+        # 1. init (idempotent — needed on fresh checkouts)
+        r = subprocess.run(
+            ["tofu", "init", "-input=false"],
+            cwd=STACK_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if r.returncode != 0:
+            return _classify_error(r.stderr)
+
+        # 2. workspace select — if missing, treat destroy as already-done
+        workspace = f"{project_name}-{env}"
+        sel = subprocess.run(
+            ["tofu", "workspace", "select", workspace],
+            cwd=STACK_DIR,
+            capture_output=True,
+            text=True,
+        )
+        if sel.returncode != 0:
+            _maybe_clear_session_deployment(session, project_name, env)
+            return {
+                "destroyed": True,
+                "project_name": project_name,
+                "env": env,
+                "note": "Workspace was already gone — nothing to destroy.",
+            }
+
+        # 3. destroy
+        r = subprocess.run(
+            [
+                "tofu",
+                "destroy",
+                "-auto-approve",
+                "-input=false",
+                f"-var=project_name={project_name}",
+                f"-var=env={env}",
+            ],
+            cwd=STACK_DIR,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if r.returncode != 0:
+            return _classify_error(r.stderr)
+
+        _maybe_clear_session_deployment(session, project_name, env)
+        return {"destroyed": True, "project_name": project_name, "env": env}
+
+    except subprocess.TimeoutExpired:
+        return {"summary": "Destroy timed out after 10 minutes.", "details": ""}
+    except Exception as e:
+        return {"summary": "Destroy failed unexpectedly.", "details": str(e)}
+
+
 # ── Tool Definitions (passed to Claude) ───────────────────────────────────────
 TOOL_DEFINITIONS = [
     {
@@ -272,6 +403,33 @@ TOOL_DEFINITIONS = [
             "when the user's request is ambiguous (e.g., 'destroy my old test site')."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "destroy_infrastructure",
+        "description": (
+            "Destroy a static-site deployment. Two-phase: first call with confirm=false "
+            "to preview, then call again with confirm=true after the user explicitly "
+            "confirms. Always cite the exact project_name and env from list_deployments "
+            "or session.deployment — never guess."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_name": {
+                    "type": "string",
+                    "description": "Exact project_name from list_deployments / session.deployment.",
+                },
+                "env": {
+                    "type": "string",
+                    "description": "Exact env from list_deployments / session.deployment.",
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Set to true to actually destroy. Default false returns a preview only.",
+                },
+            },
+            "required": ["project_name", "env"],
+        },
     },
 ]
 
@@ -411,4 +569,6 @@ def execute_tool(name: str, inputs: dict, session_id: str, session) -> dict:
         return upload_files(session=session, **inputs)
     elif name == "list_deployments":
         return list_deployments(session=session, **inputs)
+    elif name == "destroy_infrastructure":
+        return destroy_infrastructure(session=session, **inputs)
     return {"summary": f"Unknown tool: {name}", "details": ""}

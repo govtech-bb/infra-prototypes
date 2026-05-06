@@ -532,9 +532,7 @@ def test_list_deployments_empty_when_no_deployed_sessions(mock_run, tmp_path, mo
     # A row with no deployment — the WHERE clause filters it out, so the query
     # returns zero rows. _read_active_deployments hits the `if not rows: return []`
     # early-return without shelling out to tofu.
-    conn.execute(
-        "INSERT INTO sessions (session_id) VALUES (?)", ("sess-undeployed",)
-    )
+    conn.execute("INSERT INTO sessions (session_id) VALUES (?)", ("sess-undeployed",))
     conn.commit()
     conn.close()
     monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
@@ -542,3 +540,179 @@ def test_list_deployments_empty_when_no_deployed_sessions(mock_run, tmp_path, mo
     result = tools.list_deployments(session=None)
     assert result == {"deployments": []}
     mock_run.assert_not_called()  # Don't shell out to tofu when query returns 0 rows.
+
+
+# ── destroy_infrastructure tests ──────────────────────────────────────────────
+
+
+def test_destroy_unknown_project_returns_summary(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(tmp_path / "nope.db"))
+    from sessions import Session
+
+    session = Session(session_id="s")
+
+    result = tools.destroy_infrastructure(
+        project_name="ghost",
+        env="proto",
+        session=session,
+    )
+    assert "summary" in result
+    assert "No record" in result["summary"]
+    assert result.get("preview") is not True
+
+
+def test_destroy_preview_returns_preview_shape(tmp_path, monkeypatch):
+    db_path = tmp_path / "sessions.db"
+    _seed_session(
+        db_path,
+        "alpha",
+        "proto",
+        {
+            "site_title": "Alpha Site",
+            "owner_name": "A. User",
+            "site_url": "https://a.cloudfront.net",
+            "bucket_name": "alpha-proto-static",
+            "cloudfront_distribution_id": "ABC123",
+            "project_name": "alpha",
+            "env": "proto",
+        },
+    )
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
+    from sessions import Session
+
+    session = Session(session_id="s")
+
+    with patch("tools.subprocess.run") as mock_run:
+        result = tools.destroy_infrastructure(
+            project_name="alpha",
+            env="proto",
+            confirm=False,
+            session=session,
+        )
+
+    assert result["preview"] is True
+    assert "Will destroy" in result["message"]
+    assert "alpha-proto" in result["message"]
+    assert "summary" not in result
+    assert "deployment" in result
+    assert result["deployment"]["site_title"] == "Alpha Site"
+    mock_run.assert_not_called()
+
+
+@patch("tools.subprocess.run")
+def test_destroy_confirm_runs_destroy_and_clears_session(mock_run, tmp_path, monkeypatch):
+    db_path = tmp_path / "sessions.db"
+    _seed_session(
+        db_path,
+        "alpha",
+        "proto",
+        {
+            "site_title": "Alpha",
+            "owner_name": "A",
+            "site_url": "https://a",
+            "bucket_name": "alpha-proto-static",
+            "cloudfront_distribution_id": "ABC",
+            "project_name": "alpha",
+            "env": "proto",
+        },
+    )
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
+    from sessions import Session
+
+    session = Session(
+        session_id="s",
+        deployment={"project_name": "alpha", "env": "proto", "site_url": "https://a"},
+    )
+
+    mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+
+    result = tools.destroy_infrastructure(
+        project_name="alpha",
+        env="proto",
+        confirm=True,
+        session=session,
+    )
+    assert result.get("destroyed") is True
+    assert result["project_name"] == "alpha"
+    assert result["env"] == "proto"
+    assert session.deployment is None
+    destroy_calls = [c for c in mock_run.call_args_list if c.args[0][1] == "destroy"]
+    assert destroy_calls, "tofu destroy was not invoked"
+    destroy_cmd = destroy_calls[0].args[0]
+    assert "-var=project_name=alpha" in destroy_cmd
+    assert "-var=env=proto" in destroy_cmd
+    init_calls = [c for c in mock_run.call_args_list if c.args[0][1] == "init"]
+    assert init_calls
+
+
+@patch("tools.subprocess.run")
+def test_destroy_workspace_already_gone_is_idempotent(mock_run, tmp_path, monkeypatch):
+    db_path = tmp_path / "sessions.db"
+    _seed_session(
+        db_path,
+        "alpha",
+        "proto",
+        {
+            "site_title": "Alpha",
+            "project_name": "alpha",
+            "env": "proto",
+        },
+    )
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
+    from sessions import Session
+
+    session = Session(session_id="s")
+
+    def fake_run(cmd, **kwargs):
+        if cmd[1] == "init":
+            return MagicMock(returncode=0, stderr="", stdout="")
+        if cmd[:3] == ["tofu", "workspace", "select"]:
+            return MagicMock(returncode=1, stderr="workspace alpha-proto does not exist", stdout="")
+        raise AssertionError(f"Unexpected call: {cmd}")
+
+    mock_run.side_effect = fake_run
+
+    result = tools.destroy_infrastructure(
+        project_name="alpha",
+        env="proto",
+        confirm=True,
+        session=session,
+    )
+    assert result.get("destroyed") is True
+    assert "summary" not in result
+
+
+@patch("tools.subprocess.run")
+def test_destroy_failure_returns_classified_summary(mock_run, tmp_path, monkeypatch):
+    db_path = tmp_path / "sessions.db"
+    _seed_session(
+        db_path,
+        "alpha",
+        "proto",
+        {
+            "site_title": "Alpha",
+            "project_name": "alpha",
+            "env": "proto",
+        },
+    )
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
+    from sessions import Session
+
+    session = Session(session_id="s")
+
+    def fake_run(cmd, **kwargs):
+        if cmd[1] == "destroy":
+            return MagicMock(returncode=1, stderr="AccessDenied: not authorized", stdout="")
+        return MagicMock(returncode=0, stderr="", stdout="")
+
+    mock_run.side_effect = fake_run
+
+    result = tools.destroy_infrastructure(
+        project_name="alpha",
+        env="proto",
+        confirm=True,
+        session=session,
+    )
+    assert "summary" in result
+    assert "permission" in result["summary"].lower() or "credentials" in result["summary"].lower()
+    assert result.get("destroyed") is not True

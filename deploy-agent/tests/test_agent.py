@@ -103,3 +103,26 @@ def test_tool_failure_does_not_cache_deployment(monkeypatch):
     session = Session(session_id="s1")
     agent.run_agent_loop(client, session)
     assert session.deployment is None
+
+
+def test_destroy_result_does_not_get_cached_as_deployment(monkeypatch):
+    client = MagicMock()
+    destroy_block = _block("tool_use", id="t1", name="destroy_infrastructure", input={})
+    client.messages.create.side_effect = [
+        _response([destroy_block], "tool_use"),
+        _response([_block("text", text="Destroyed.")], "end_turn"),
+    ]
+    monkeypatch.setattr(
+        agent,
+        "execute_tool",
+        lambda name, inputs, session_id, session: {
+            "destroyed": True,
+            "project_name": "x",
+            "env": "proto",
+        },
+    )
+
+    session = Session(session_id="s1")
+    agent.run_agent_loop(client, session)
+    # Destroy result must NOT populate session.deployment.
+    assert session.deployment is None
