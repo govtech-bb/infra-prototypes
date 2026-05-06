@@ -194,7 +194,7 @@ def test_greeting_lists_all_capabilities(client):
     r = client.get("/")
     body = r.text
     # The opening message advertises every flow the agent supports.
-    assert "Deploy" in body and "new static site" in body
+    assert "Deploy" in body and "new prototype" in body
     assert "Update" in body and "existing site" in body
     assert "List" in body and "active deployments" in body
     assert "Destroy" in body and "with confirmation" in body
