@@ -1,5 +1,6 @@
 resource "aws_s3_bucket" "this" {
-  bucket = "${var.project_name}-${var.env}-static"
+  bucket        = "${var.project_name}-${var.env}-static"
+  force_destroy = true
 
   tags = merge(var.tags, {
     Project     = var.project_name

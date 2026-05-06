@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 
 import boto3
+import botocore.exceptions
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 # Resolve infra directory relative to this file: deploy-agent/ → infra/
@@ -45,6 +46,39 @@ def _classify_error(stderr: str) -> dict:
         if re.search(pattern, stderr, re.IGNORECASE):
             return {"summary": summary, "details": details}
     return {"summary": "Deployment failed — see details.", "details": details}
+
+
+# ── Bucket emptying ───────────────────────────────────────────────────────────
+
+
+def _empty_bucket(bucket_name: str) -> dict | None:
+    """Delete all objects in the bucket. Returns None on success, error dict on failure.
+
+    Idempotent: missing bucket is treated as success. Versioned buckets are not
+    fully handled (current object versions only).
+    """
+    try:
+        s3 = boto3.client("s3")
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket_name):
+            objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+            if not objects:
+                continue
+            s3.delete_objects(Bucket=bucket_name, Delete={"Objects": objects})
+        return None
+    except botocore.exceptions.ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code == "NoSuchBucket":
+            return None
+        return {
+            "summary": f"Could not empty bucket {bucket_name!r} before destroy.",
+            "details": str(e),
+        }
+    except Exception as e:
+        return {
+            "summary": f"Could not empty bucket {bucket_name!r} before destroy.",
+            "details": str(e),
+        }
 
 
 # ── Upload preflight ──────────────────────────────────────────────────────────
@@ -328,6 +362,15 @@ def destroy_infrastructure(
                     "note": "Workspace was already gone — nothing to destroy.",
                 }
             return _classify_error(sel.stderr)
+
+        # 2.5 Empty the bucket — tofu destroy can't delete a non-empty bucket
+        # unless force_destroy = true (added in this commit but only effective
+        # after the next tofu apply for existing deployments).
+        bucket_name = record.get("bucket_name")
+        if bucket_name:
+            empty_err = _empty_bucket(bucket_name)
+            if empty_err is not None:
+                return empty_err
 
         # 3. destroy
         r = subprocess.run(

@@ -657,8 +657,11 @@ def test_destroy_preview_returns_preview_shape(tmp_path, monkeypatch):
     mock_run.assert_not_called()
 
 
+@patch("tools._empty_bucket", return_value=None)
 @patch("tools.subprocess.run")
-def test_destroy_confirm_runs_destroy_and_clears_session(mock_run, tmp_path, monkeypatch):
+def test_destroy_confirm_runs_destroy_and_clears_session(
+    mock_run, mock_empty, tmp_path, monkeypatch
+):
     db_path = tmp_path / "sessions.db"
     _seed_session(
         db_path,
@@ -774,3 +777,103 @@ def test_destroy_failure_returns_classified_summary(mock_run, tmp_path, monkeypa
     assert "summary" in result
     assert "permission" in result["summary"].lower() or "credentials" in result["summary"].lower()
     assert result.get("destroyed") is not True
+
+
+# ── _empty_bucket tests ───────────────────────────────────────────────────────
+
+
+def test_empty_bucket_deletes_all_objects(aws_credentials):
+    import boto3
+    from moto import mock_aws
+
+    with mock_aws():
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket="test-empty")
+        s3.put_object(Bucket="test-empty", Key="a.html", Body=b"a")
+        s3.put_object(Bucket="test-empty", Key="b/c.css", Body=b"b")
+        s3.put_object(Bucket="test-empty", Key="d.svg", Body=b"d")
+
+        with patch.object(tools.boto3, "client", return_value=s3):
+            err = tools._empty_bucket("test-empty")
+
+        assert err is None
+        remaining = s3.list_objects_v2(Bucket="test-empty").get("Contents", [])
+        assert remaining == []
+
+
+def test_empty_bucket_handles_no_such_bucket(aws_credentials):
+    from botocore.exceptions import ClientError
+
+    fake_client = MagicMock()
+    fake_client.get_paginator.side_effect = ClientError(
+        {"Error": {"Code": "NoSuchBucket", "Message": "Not found"}},
+        "ListObjectsV2",
+    )
+
+    with patch.object(tools.boto3, "client", return_value=fake_client):
+        err = tools._empty_bucket("never-existed")
+    assert err is None  # idempotent — already gone is fine
+
+
+def test_empty_bucket_returns_summary_on_access_denied(aws_credentials):
+    from botocore.exceptions import ClientError
+
+    fake_client = MagicMock()
+    fake_client.get_paginator.side_effect = ClientError(
+        {"Error": {"Code": "AccessDenied", "Message": "Denied"}},
+        "ListObjectsV2",
+    )
+
+    with patch.object(tools.boto3, "client", return_value=fake_client):
+        err = tools._empty_bucket("private-bucket")
+    assert err is not None
+    assert "summary" in err
+    assert "private-bucket" in err["summary"]
+
+
+@patch("tools.subprocess.run")
+def test_destroy_empties_bucket_before_tofu_destroy(
+    mock_run, aws_credentials, tmp_path, monkeypatch
+):
+    import boto3 as _boto3
+    from moto import mock_aws
+
+    db_path = tmp_path / "sessions.db"
+    _seed_session(
+        db_path,
+        "alpha",
+        "proto",
+        {
+            "site_title": "Alpha",
+            "bucket_name": "alpha-proto-static",
+            "cloudfront_distribution_id": "ABC",
+            "project_name": "alpha",
+            "env": "proto",
+        },
+    )
+    monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
+    from sessions import Session
+
+    session = Session(session_id="s")
+
+    mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+
+    with mock_aws():
+        real_s3 = _boto3.client("s3", region_name="us-east-1")
+        real_s3.create_bucket(Bucket="alpha-proto-static")
+        real_s3.put_object(Bucket="alpha-proto-static", Key="index.html", Body=b"<html>")
+
+        with patch.object(tools.boto3, "client", return_value=real_s3):
+            result = tools.destroy_infrastructure(
+                project_name="alpha",
+                env="proto",
+                confirm=True,
+                session=session,
+            )
+
+        assert result.get("destroyed") is True
+        contents = real_s3.list_objects_v2(Bucket="alpha-proto-static").get("Contents", [])
+        assert contents == []
+
+    destroy_calls = [c for c in mock_run.call_args_list if c.args[0][1] == "destroy"]
+    assert destroy_calls, "tofu destroy was not invoked"
