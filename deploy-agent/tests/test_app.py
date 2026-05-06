@@ -164,3 +164,27 @@ def test_chat_no_injection_when_files_unchanged(client, monkeypatch):
     assert "[Newly uploaded:" not in captured_turns[1]
     assert "[Uploaded files:" not in captured_turns[1]
     assert captured_turns[1] == "second"
+
+
+# ── UI / static branding ──────────────────────────────────────────────────────
+
+
+def test_index_page_serves_govtech_branding(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    body = r.text
+    assert "GovTech" in body
+    assert "Barbados" in body
+    # Confirms the alpha banner pattern is intact.
+    assert "Alpha" in body
+    # Confirms the logo is referenced (not the previous emoji-only header).
+    assert "govtech-barbados.png" in body
+
+
+def test_logo_asset_is_served(client):
+    r = client.get("/govtech-barbados.png")
+    assert r.status_code == 200
+    # JPEG starts with FF D8 FF; PNG with 89 50 4E 47. We saved a JPEG with .png
+    # extension so accept either signature.
+    head = r.content[:4]
+    assert head[:3] == b"\xff\xd8\xff" or head == b"\x89PNG"
