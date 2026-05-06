@@ -161,10 +161,15 @@ def _read_active_deployments() -> list[dict]:
         # If tofu isn't available, fall back to all recorded deployments.
         active = {f"{r['project_name']}-{r['env']}" for r in rows}
     else:
+        # tofu workspace list emits lines like "* alpha-proto" (active) or
+        # "  alpha-proto" (inactive). Slice off the 2-char prefix explicitly
+        # rather than stripping a character set — that way, workspace names
+        # that happen to start with '*' or ' ' (if tofu ever allows them)
+        # don't get mangled.
         active = {
-            line.lstrip("* ").strip()
+            line[2:].strip()
             for line in ws.stdout.splitlines()
-            if line.strip() and line.strip() != "default"
+            if len(line) > 2 and line[2:].strip() != "default"
         }
 
     deployments = []

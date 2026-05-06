@@ -518,15 +518,27 @@ def test_list_deployments_empty_when_no_deployed_sessions(mock_run, tmp_path, mo
     import sqlite3
 
     conn = sqlite3.connect(db_path)
+    # Match the production schema so we exercise the zero-rows early-return,
+    # not the OperationalError fallback for missing columns.
     conn.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
-          session_id TEXT PRIMARY KEY, deployment TEXT, project_name TEXT, env TEXT
+          session_id   TEXT PRIMARY KEY,
+          deployment   TEXT,
+          project_name TEXT,
+          env          TEXT,
+          updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # A row with no deployment — the WHERE clause filters it out, so the query
+    # returns zero rows. _read_active_deployments hits the `if not rows: return []`
+    # early-return without shelling out to tofu.
+    conn.execute(
+        "INSERT INTO sessions (session_id) VALUES (?)", ("sess-undeployed",)
+    )
     conn.commit()
     conn.close()
     monkeypatch.setenv("DEPLOY_AGENT_DB", str(db_path))
 
     result = tools.list_deployments(session=None)
     assert result == {"deployments": []}
-    mock_run.assert_not_called()  # Don't shell out to tofu when no rows.
+    mock_run.assert_not_called()  # Don't shell out to tofu when query returns 0 rows.
