@@ -289,7 +289,9 @@ def destroy_infrastructure(
         if r.returncode != 0:
             return _classify_error(r.stderr)
 
-        # 2. workspace select — if missing, treat destroy as already-done
+        # 2. workspace select — if missing, treat destroy as already-done.
+        # Narrow check: only the "does not exist" stderr counts as idempotent;
+        # other failures (missing tofu, broken state backend) surface as errors.
         workspace = f"{project_name}-{env}"
         sel = subprocess.run(
             ["tofu", "workspace", "select", workspace],
@@ -298,13 +300,15 @@ def destroy_infrastructure(
             text=True,
         )
         if sel.returncode != 0:
-            _maybe_clear_session_deployment(session, project_name, env)
-            return {
-                "destroyed": True,
-                "project_name": project_name,
-                "env": env,
-                "note": "Workspace was already gone — nothing to destroy.",
-            }
+            if "does not exist" in sel.stderr.lower():
+                _maybe_clear_session_deployment(session, project_name, env)
+                return {
+                    "destroyed": True,
+                    "project_name": project_name,
+                    "env": env,
+                    "note": "Workspace was already gone — nothing to destroy.",
+                }
+            return _classify_error(sel.stderr)
 
         # 3. destroy
         r = subprocess.run(
