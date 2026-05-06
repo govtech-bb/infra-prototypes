@@ -188,3 +188,28 @@ def test_logo_asset_is_served(client):
     # extension so accept either signature.
     head = r.content[:4]
     assert head[:3] == b"\xff\xd8\xff" or head == b"\x89PNG"
+
+
+def test_greeting_lists_all_capabilities(client):
+    r = client.get("/")
+    body = r.text
+    # The opening message advertises every flow the agent supports.
+    assert "Deploy" in body and "new static site" in body
+    assert "Update" in body and "existing site" in body
+    assert "List" in body and "active deployments" in body
+    assert "Destroy" in body and "with confirmation" in body
+
+
+def test_index_includes_markdown_renderer(client):
+    r = client.get("/")
+    body = r.text
+    # Confirms the DOM-based markdown renderer is wired in. We don't need to
+    # invoke it from Python — just ensure the function names exist in source.
+    assert "function renderMarkdown" in body
+    assert "function renderInline" in body
+    assert "function isSafeUrl" in body
+    # Sanity: we still construct nodes via createElement / textContent, not by
+    # assigning HTML strings to elements (which would be an XSS path with
+    # LLM-generated content).
+    forbidden = "." + "innerHTML" + " ="
+    assert forbidden not in body

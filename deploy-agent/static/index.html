@@ -284,7 +284,6 @@
       padding: 12px 16px;
       font-size: 14px;
       line-height: 1.55;
-      white-space: pre-wrap;
       word-break: break-word;
       box-shadow: var(--shadow-sm);
       color: var(--text);
@@ -294,7 +293,84 @@
       border-color: var(--gt-purple-d);
       border-left-color: var(--gt-cyan);
       color: #fff;
+      white-space: pre-wrap;  /* user messages are plain text */
     }
+
+    /* ── Rendered markdown inside agent bubbles ─────────────────────────────── */
+    .bubble p { margin: 0 0 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble h1, .bubble h2, .bubble h3, .bubble h4 {
+      margin: 4px 0 6px; font-weight: 700; color: var(--text);
+    }
+    .bubble h1 { font-size: 17px; }
+    .bubble h2 { font-size: 15.5px; }
+    .bubble h3 { font-size: 14.5px; }
+    .bubble h4 { font-size: 13.5px; }
+    .bubble ul, .bubble ol { margin: 4px 0 8px 20px; padding: 0; }
+    .bubble li { margin: 2px 0; }
+    .bubble a {
+      color: var(--gt-purple);
+      font-weight: 600;
+      text-decoration: underline;
+      text-decoration-color: var(--gt-cyan);
+      text-underline-offset: 2px;
+    }
+    .bubble a:hover { color: var(--gt-cyan-d); }
+    .bubble strong { color: var(--text); font-weight: 700; }
+    .bubble em { font-style: italic; }
+    .bubble code {
+      background: rgba(58, 51, 128, 0.08);
+      color: var(--gt-purple-d);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .bubble pre {
+      background: #0F1320;
+      color: #E2E5EC;
+      padding: 10px 14px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 6px 0 10px;
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+    .bubble pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      font-size: inherit;
+    }
+    .bubble table {
+      border-collapse: collapse;
+      margin: 6px 0 10px;
+      font-size: 13px;
+      max-width: 100%;
+      display: block;
+      overflow-x: auto;
+    }
+    .bubble th, .bubble td {
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .bubble th {
+      background: rgba(58, 51, 128, 0.05);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .bubble tr:nth-child(even) td { background: #FAFBFD; }
+    /* Tables in user bubbles (rare but possible): white-on-purple */
+    .msg.user .bubble th { background: rgba(255,255,255,0.1); color: #fff; }
+    .msg.user .bubble td { color: #fff; }
+    .msg.user .bubble tr:nth-child(even) td { background: rgba(255,255,255,0.04); }
+    .msg.user .bubble a { color: var(--gt-cyan); text-decoration-color: rgba(255,255,255,0.5); }
+    .msg.user .bubble code { background: rgba(255,255,255,0.15); color: #fff; }
 
     /* ── Success banner ──────────────────────────────────────────────────────── */
     .success-banner {
@@ -548,7 +624,17 @@
     const res  = await fetch('/api/session');
     const data = await res.json();
     sessionId  = data.session_id;
-    appendMessage('agent', "Hi! I'm the GovTech Barbados Deploy Agent. Upload your website files on the left, then tell me what you'd like to host, update, or destroy and I'll handle it on AWS for you.");
+
+    appendMessage('agent', [
+      "Hi! I'm the GovTech Barbados Deploy Agent. Here's what I can do for you:",
+      "",
+      "- **Deploy** a new static site to AWS (S3 + CloudFront, with HTTPS and a global CDN).",
+      "- **Update** an existing site by uploading new files — I keep the same URL.",
+      "- **List** your active deployments so you can see what's live.",
+      "- **Destroy** a deployment when you're done with it (with confirmation).",
+      "",
+      "Drop your built site on the left, then tell me what you'd like to do — for example *\"deploy a new landing page\"* or *\"update the import duty estimator\"* or *\"list my sites\"*.",
+    ].join('\n'));
   }
 
   // ── File upload ────────────────────────────────────────────────────────────
@@ -669,13 +755,254 @@
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
-    bubble.textContent = text;
+    if (role === 'agent') {
+      // Agent messages may contain markdown — render via DOM (no innerHTML).
+      renderMarkdown(text || '', bubble);
+    } else {
+      // User messages are plain text; pre-wrap CSS preserves newlines.
+      bubble.textContent = text || '';
+    }
 
     msg.appendChild(avatar);
     msg.appendChild(bubble);
     messagesEl.appendChild(msg);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return msg;
+  }
+
+  // ── Markdown renderer (DOM-based; never uses innerHTML) ────────────────────
+  // Supports a focused subset matching what the agent actually produces:
+  // headings (#), tables (| ... |), unordered lists (- / *), ordered lists,
+  // fenced code blocks (```), inline code (`), bold (**), italic (*), and
+  // links ([text](url)). URLs are validated to http/https/relative to prevent
+  // javascript: scheme injection.
+  function renderMarkdown(text, container) {
+    const lines = text.replace(/\r\n/g, '\n').split('\n');
+    let i = 0;
+
+    const isTableSeparator = s => /^\s*\|?[\s|:\-]+\|?\s*$/.test(s) && s.includes('-');
+    const isTableRow = s => s.includes('|');
+    const isUlItem = s => /^\s*[-*]\s+/.test(s);
+    const isOlItem = s => /^\s*\d+\.\s+/.test(s);
+    const isHeading = s => /^#{1,6}\s+/.test(s);
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Skip blank lines
+      if (line.trim() === '') { i++; continue; }
+
+      // Fenced code block
+      if (/^```/.test(line)) {
+        const codeLines = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i])) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length) i++; // skip closing fence
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = codeLines.join('\n');
+        pre.appendChild(code);
+        container.appendChild(pre);
+        continue;
+      }
+
+      // Heading
+      if (isHeading(line)) {
+        const m = line.match(/^(#{1,6})\s+(.*)$/);
+        const level = Math.min(m[1].length, 4);
+        const h = document.createElement('h' + level);
+        renderInline(m[2], h);
+        container.appendChild(h);
+        i++;
+        continue;
+      }
+
+      // Table: header row, separator, then body rows
+      if (isTableRow(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+        const headerCells = splitTableRow(line);
+        i += 2; // skip header + separator
+        const bodyRows = [];
+        while (i < lines.length && isTableRow(lines[i]) && lines[i].trim() !== '') {
+          bodyRows.push(splitTableRow(lines[i]));
+          i++;
+        }
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headerTr = document.createElement('tr');
+        for (const cell of headerCells) {
+          const th = document.createElement('th');
+          renderInline(cell, th);
+          headerTr.appendChild(th);
+        }
+        thead.appendChild(headerTr);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        for (const row of bodyRows) {
+          const tr = document.createElement('tr');
+          for (const cell of row) {
+            const td = document.createElement('td');
+            renderInline(cell, td);
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        container.appendChild(table);
+        continue;
+      }
+
+      // Unordered list
+      if (isUlItem(line)) {
+        const ul = document.createElement('ul');
+        while (i < lines.length && isUlItem(lines[i])) {
+          const item = lines[i].replace(/^\s*[-*]\s+/, '');
+          const li = document.createElement('li');
+          renderInline(item, li);
+          ul.appendChild(li);
+          i++;
+        }
+        container.appendChild(ul);
+        continue;
+      }
+
+      // Ordered list
+      if (isOlItem(line)) {
+        const ol = document.createElement('ol');
+        while (i < lines.length && isOlItem(lines[i])) {
+          const item = lines[i].replace(/^\s*\d+\.\s+/, '');
+          const li = document.createElement('li');
+          renderInline(item, li);
+          ol.appendChild(li);
+          i++;
+        }
+        container.appendChild(ol);
+        continue;
+      }
+
+      // Paragraph: collect until blank line or block-level marker
+      const paraLines = [];
+      while (i < lines.length && lines[i].trim() !== '' &&
+             !/^```/.test(lines[i]) &&
+             !isHeading(lines[i]) &&
+             !isUlItem(lines[i]) &&
+             !isOlItem(lines[i]) &&
+             !(isTableRow(lines[i]) && i + 1 < lines.length && isTableSeparator(lines[i + 1]))) {
+        paraLines.push(lines[i]);
+        i++;
+      }
+      if (paraLines.length > 0) {
+        const p = document.createElement('p');
+        // Inside a paragraph, single newlines are soft breaks (rendered as <br>).
+        for (let j = 0; j < paraLines.length; j++) {
+          renderInline(paraLines[j], p);
+          if (j < paraLines.length - 1) p.appendChild(document.createElement('br'));
+        }
+        container.appendChild(p);
+      }
+    }
+  }
+
+  function splitTableRow(line) {
+    let s = line.trim();
+    if (s.startsWith('|')) s = s.slice(1);
+    if (s.endsWith('|')) s = s.slice(0, -1);
+    return s.split('|').map(c => c.trim());
+  }
+
+  // Inline tokenizer: handles `code`, **bold**, *italic*, [text](url) — leaves
+  // everything else as plain text. Builds DOM nodes (no innerHTML).
+  function renderInline(text, container) {
+    let i = 0;
+    while (i < text.length) {
+      // Inline code: `text`
+      if (text[i] === '`') {
+        const end = text.indexOf('`', i + 1);
+        if (end !== -1) {
+          const code = document.createElement('code');
+          code.textContent = text.slice(i + 1, end);
+          container.appendChild(code);
+          i = end + 1;
+          continue;
+        }
+      }
+
+      // Bold: **text**
+      if (text[i] === '*' && text[i + 1] === '*') {
+        const end = text.indexOf('**', i + 2);
+        if (end !== -1) {
+          const strong = document.createElement('strong');
+          renderInline(text.slice(i + 2, end), strong);
+          container.appendChild(strong);
+          i = end + 2;
+          continue;
+        }
+      }
+
+      // Italic: *text* (single star, not part of bold)
+      if (text[i] === '*' && text[i + 1] !== '*') {
+        const end = findClosingStar(text, i + 1);
+        if (end !== -1) {
+          const em = document.createElement('em');
+          renderInline(text.slice(i + 1, end), em);
+          container.appendChild(em);
+          i = end + 1;
+          continue;
+        }
+      }
+
+      // Link: [text](url)
+      if (text[i] === '[') {
+        const closeBracket = text.indexOf(']', i + 1);
+        if (closeBracket !== -1 && text[closeBracket + 1] === '(') {
+          const closeParen = text.indexOf(')', closeBracket + 2);
+          if (closeParen !== -1) {
+            const linkText = text.slice(i + 1, closeBracket);
+            const url = text.slice(closeBracket + 2, closeParen).trim();
+            if (isSafeUrl(url)) {
+              const a = document.createElement('a');
+              a.href = url;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              renderInline(linkText, a);
+              container.appendChild(a);
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+      }
+
+      // Plain text — advance to next special char
+      let next = text.length;
+      for (const ch of ['`', '*', '[']) {
+        const pos = text.indexOf(ch, i);
+        if (pos !== -1 && pos < next) next = pos;
+      }
+      if (next > i) {
+        container.appendChild(document.createTextNode(text.slice(i, next)));
+        i = next;
+      } else {
+        container.appendChild(document.createTextNode(text[i]));
+        i++;
+      }
+    }
+  }
+
+  function findClosingStar(text, from) {
+    // Find the next single * that isn't part of **.
+    for (let j = from; j < text.length; j++) {
+      if (text[j] === '*' && text[j + 1] !== '*' && text[j - 1] !== '*') return j;
+    }
+    return -1;
+  }
+
+  function isSafeUrl(url) {
+    // Allow http, https, mailto, relative, and fragment-only URLs.
+    return /^(https?:\/\/|mailto:|\/|#)/.test(url);
   }
 
   function appendTyping() {
