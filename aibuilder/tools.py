@@ -47,8 +47,31 @@ def clone_repo(github_url: str, *, session_id: str, **_: Any) -> dict:
             "details": f"received: {github_url!r}",
         }
 
+    owner = match.group("owner")
     repo_name = match.group("repo")
-    target = _tmp_root() / session_id / repo_name
+    # The regex allows "." / ".." since `.` is a literal in `[\w.-]+`. Reject
+    # those (and any name made of only dots) to prevent path traversal — without
+    # this, a URL like `https://github.com/foo/..` would resolve `target` to
+    # the tmp root and shutil.rmtree the whole thing.
+    if any(seg in ("", ".", "..") or set(seg) == {"."} for seg in (owner, repo_name)):
+        return {
+            "summary": "That doesn't look like a GitHub repo URL. "
+            "Try `https://github.com/<owner>/<repo>`.",
+            "details": f"received: {github_url!r}",
+        }
+
+    session_root = (_tmp_root() / session_id).resolve()
+    target = session_root / repo_name
+    # Defense in depth: even after the dot-segment check, confirm the resolved
+    # target sits inside the session dir before doing destructive operations.
+    try:
+        target.resolve().relative_to(session_root)
+    except ValueError:
+        return {
+            "summary": "That doesn't look like a GitHub repo URL. "
+            "Try `https://github.com/<owner>/<repo>`.",
+            "details": f"received: {github_url!r}",
+        }
     if target.exists():
         shutil.rmtree(target)
     target.parent.mkdir(parents=True, exist_ok=True)

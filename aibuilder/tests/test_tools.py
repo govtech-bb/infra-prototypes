@@ -54,6 +54,32 @@ def test_clone_rejects_repo_too_many_files(tmp_path: Path, monkeypatch):
     assert "too large" in result["summary"].lower() or "subfolder" in result["summary"].lower()
 
 
+def test_clone_rejects_path_traversal_repo_names(tmp_path: Path, monkeypatch):
+    """Regression: the URL regex's [\\w.-]+ allows '.', '..', '...' etc.,
+    which without explicit rejection would let `target.parent / '..'` escape
+    the session dir and let a subsequent shutil.rmtree wipe the tmp root.
+    """
+    monkeypatch.setenv("AIBUILDER_TMP_DIR", str(tmp_path))
+
+    # Pre-create a sentinel directory under tmp_path that MUST survive.
+    sentinel = tmp_path / "must-not-be-deleted"
+    sentinel.mkdir()
+
+    def must_not_run(cmd, **kwargs):
+        raise AssertionError(f"subprocess.run was called with {cmd!r} — clone should have aborted")
+
+    for bad in (
+        "https://github.com/foo/..",
+        "https://github.com/foo/.",
+        "https://github.com/../foo",
+        "https://github.com/.../bar",
+    ):
+        with patch("subprocess.run", side_effect=must_not_run):
+            result = clone_repo(bad, session_id="s-traverse")
+        assert "summary" in result, f"expected error dict for {bad!r}, got {result!r}"
+        assert sentinel.exists(), f"sentinel was deleted while handling {bad!r}"
+
+
 def test_clone_handles_git_failure(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AIBUILDER_TMP_DIR", str(tmp_path))
 
