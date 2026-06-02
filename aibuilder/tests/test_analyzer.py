@@ -70,3 +70,18 @@ def test_worker_detected():
     profile = analyze_repo(str(FIXTURES / "worker"))
     assert profile.app_type == "worker"
     assert "celery" in profile.frameworks
+
+
+def test_summary_includes_app_type_and_frameworks():
+    profile = analyze_repo(str(FIXTURES / "python_api"))
+    assert "python backend api" in profile.summary.lower()
+    assert "fastapi" in profile.summary.lower()
+    assert "python" in profile.summary.lower()
+
+
+def test_summary_for_unknown_repo(tmp_path: Path):
+    # Repo with one stray text file → no manifest, no html
+    (tmp_path / "notes.txt").write_text("just a note")
+    profile = analyze_repo(str(tmp_path))
+    assert profile.app_type == "unknown"
+    assert "couldn't tell" in profile.summary.lower()
