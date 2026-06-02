@@ -136,3 +136,33 @@ def test_recommend_handles_dict_profile():
     }
     arch = recommend_architecture(profile)
     assert arch["pattern"] == "node_api"
+
+
+def test_tool_definitions_shape():
+    from tools import TOOL_DEFINITIONS
+
+    names = [t["name"] for t in TOOL_DEFINITIONS]
+    assert names == ["clone_repo", "analyze_repo", "recommend_architecture", "estimate_cost"]
+    for t in TOOL_DEFINITIONS:
+        assert "description" in t
+        assert "input_schema" in t
+
+
+def test_execute_tool_dispatches():
+    from tools import execute_tool
+
+    result = execute_tool(
+        "analyze_repo",
+        {"path": str(FIXTURES / "static_site")},
+        session_id="s1",
+        session=None,
+    )
+    assert result["app_type"] == "static_site"
+
+
+def test_execute_unknown_tool_returns_error():
+    from tools import execute_tool
+
+    result = execute_tool("does_not_exist", {}, session_id="s1", session=None)
+    assert "summary" in result
+    assert "unknown tool" in result["summary"].lower()

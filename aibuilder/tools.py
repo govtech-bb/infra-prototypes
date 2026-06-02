@@ -144,3 +144,99 @@ def estimate_cost(architecture: dict, **_: Any) -> dict:
         notes=list(architecture.get("notes", [])),
     )
     return _estimate(arch).to_dict()
+
+
+# ── Tool registry ────────────────────────────────────────────────────────────
+
+
+TOOL_DEFINITIONS = [
+    {
+        "name": "clone_repo",
+        "description": (
+            "Clone a public GitHub repository to a temporary directory so it can be analyzed. "
+            "Returns the local path. Use this first, before analyze_repo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "github_url": {
+                    "type": "string",
+                    "description": "Full HTTPS URL like https://github.com/<owner>/<repo>",
+                },
+            },
+            "required": ["github_url"],
+        },
+    },
+    {
+        "name": "analyze_repo",
+        "description": (
+            "Inspect a cloned repo and classify the app. Returns a RepoProfile dict "
+            "(app_type, languages, frameworks, has_dockerfile, has_database_hints, "
+            "summary, etc.). Always present the `summary` to the user verbatim and ask "
+            "them to confirm before recommending an architecture."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Local filesystem path from clone_repo",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "recommend_architecture",
+        "description": (
+            "Given a RepoProfile, return the recommended AWS architecture as a list of "
+            "named services with per-service purpose and sizing. Do NOT invent services — "
+            "the returned services list is authoritative."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "profile": {
+                    "type": "object",
+                    "description": "The RepoProfile dict returned by analyze_repo, "
+                    "with any user corrections applied (e.g., user said they also "
+                    "use a database → set has_database_hints to true).",
+                },
+            },
+            "required": ["profile"],
+        },
+    },
+    {
+        "name": "estimate_cost",
+        "description": (
+            "Given an Architecture dict from recommend_architecture, return a monthly "
+            "cost estimate with per-service breakdown and the assumptions used. Do NOT "
+            "invent dollar amounts — the returned numbers are authoritative."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "architecture": {
+                    "type": "object",
+                    "description": "The Architecture dict returned by recommend_architecture",
+                },
+            },
+            "required": ["architecture"],
+        },
+    },
+]
+
+
+_TOOL_FUNCS = {
+    "clone_repo": clone_repo,
+    "analyze_repo": analyze_repo,
+    "recommend_architecture": recommend_architecture,
+    "estimate_cost": estimate_cost,
+}
+
+
+def execute_tool(name: str, args: dict, *, session_id: str, session: Any) -> dict:
+    fn = _TOOL_FUNCS.get(name)
+    if fn is None:
+        return {"summary": f"Unknown tool: {name}", "details": ""}
+    return fn(**args, session_id=session_id, session=session)
