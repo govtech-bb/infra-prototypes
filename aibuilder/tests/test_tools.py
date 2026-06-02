@@ -4,9 +4,12 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from tools import clone_repo
+from tools import (
+    analyze_repo,
+    clone_repo,
+    estimate_cost,
+    recommend_architecture,
+)
 
 
 def test_clone_rejects_non_github_url():
@@ -92,3 +95,44 @@ def test_clone_handles_git_failure(tmp_path: Path, monkeypatch):
         result = clone_repo("https://github.com/no/exist", session_id="s3")
     assert "summary" in result
     assert "public" in result["summary"].lower()
+
+
+# Round-trip tests: analyze → recommend → estimate
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_full_chain_static_site():
+    profile = analyze_repo(str(FIXTURES / "static_site"))
+    assert profile["app_type"] == "static_site"
+    arch = recommend_architecture(profile)
+    assert arch["pattern"] == "static_site"
+    assert [s["aws_service"] for s in arch["services"]] == ["S3", "CloudFront"]
+    cost = estimate_cost(arch)
+    assert cost["total_monthly_usd"] > 0
+    assert cost["is_fallback"] is True
+
+
+def test_full_chain_fullstack_db():
+    profile = analyze_repo(str(FIXTURES / "fullstack_with_db"))
+    arch = recommend_architecture(profile)
+    assert arch["pattern"] == "fullstack_with_db"
+    cost = estimate_cost(arch)
+    services = [line["service"] for line in cost["lines"]]
+    assert "RDS PostgreSQL" in services
+
+
+def test_recommend_handles_dict_profile():
+    """The agent will pass profiles as JSON dicts, not dataclasses."""
+    profile = {
+        "app_type": "node_api",
+        "languages": ["javascript"],
+        "frameworks": ["express"],
+        "has_dockerfile": False,
+        "has_compose": False,
+        "has_database_hints": False,
+        "entry_points": ["server.js"],
+        "build_command": None,
+        "summary": "",
+    }
+    arch = recommend_architecture(profile)
+    assert arch["pattern"] == "node_api"
