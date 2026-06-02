@@ -27,6 +27,11 @@ crash.*.log
 deploy-agent/data/
 /tmp/deploy-sessions/
 
+# aibuilder
+aibuilder/data/
+aibuilder/tmp/
+aibuilder/.venv/
+
 # Editors
 .vscode/
 .idea/
