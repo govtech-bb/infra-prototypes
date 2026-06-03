@@ -27,6 +27,22 @@ def test_fullstack_estimate_includes_rds_line():
     assert rds_line.monthly_usd > 0  # RDS is not free
 
 
+def test_fullstack_estimate_includes_alb_and_total_reflects_it():
+    """Audit follow-up #12: ALB is now an explicit cost line (~$16/mo). The
+    old total was ~$21 with ALB silently free; honest total is ~$37."""
+    arch = recommend(RepoProfile(app_type="fullstack_with_db"))
+    result = estimate(arch)
+    services = [line.service for line in result.lines]
+    assert "Application Load Balancer" in services
+    alb_line = next(line for line in result.lines if line.service == "Application Load Balancer")
+    assert alb_line.monthly_usd >= 15  # ALB minimum is the fixed hourly charge
+    # Total should now reflect ALB + Fargate + RDS, not just Fargate + RDS.
+    assert result.total_monthly_usd >= 35
+    # Assumptions should mention ALB too.
+    text = " | ".join(result.assumptions)
+    assert "ALB" in text or "Load Balancer" in text
+
+
 def test_unknown_pattern_returns_empty_estimate():
     arch = recommend(RepoProfile(app_type="unknown"))
     result = estimate(arch)

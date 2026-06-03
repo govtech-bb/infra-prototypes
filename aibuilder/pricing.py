@@ -54,6 +54,13 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
     # ECS Fargate runs 24/7 — no scale-to-zero. ~$0.04/vCPU-hr + ~$0.0044/GB-hr;
     # 0.25 vCPU / 0.5 GB / 730 hr/mo ≈ $9. Rounded to $9 to keep prototype-tier honest.
     "ECS Fargate": (9.00, "0.25 vCPU / 0.5 GB, runs 24/7 (Fargate doesn't pause idle tasks)"),
+    # ALB: fixed hourly charge $0.0225 * 730 = $16.42 + LCU. LCU at prototype
+    # traffic (<25 new conns/sec, <3000 active conns, <1 GB/hr, <1000 rules)
+    # is well under 1 LCU * $0.008/hr * 730 = $5.84, so call it ~$16/mo round.
+    "Application Load Balancer": (
+        16.00,
+        "fixed hourly charge ~$16/mo (LCU usage is negligible at prototype traffic)",
+    ),
     # Amplify Gen 2 hosting: build minutes (1000/mo free) + hosting served
     # ($0.15/GB, first 15 GB free) + SSR ($0.30/M requests + $0.20/GB-hr).
     # For 100k req + 5 GB served + ~1 GB-hr SSR: request cost $0.03, SSR
@@ -76,6 +83,9 @@ _PER_SERVICE_ASSUMPTIONS: dict[str, str] = {
     "CloudFront": "~5 GB CloudFront egress per month",
     "Lambda": "Lambda: 256 MB memory, 200 ms avg duration",
     "ECS Fargate": "ECS Fargate: 0.25 vCPU / 0.5 GB, runs 24/7 (no scale-to-zero)",
+    "Application Load Balancer": (
+        "ALB: ~$16/mo fixed (LCU usage at prototype traffic is in the noise)"
+    ),
     "AWS Amplify (Gen 2)": (
         "AWS Amplify (Gen 2): ~100k requests/mo, ~5 GB served, SSR via managed "
         "compute (Amplify free tier covers most prototype traffic)"

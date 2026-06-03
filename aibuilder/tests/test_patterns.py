@@ -90,14 +90,21 @@ def test_dockerized_web_default_is_fargate():
     assert any("ECS Express" in n for n in arch.notes)
 
 
-def test_fullstack_with_db_includes_rds_and_fargate():
+def test_fullstack_with_db_includes_rds_fargate_and_alb():
+    """Audit follow-up #12: ALB used to be hand-waved in the Fargate purpose
+    string but absent from the services list and the cost. Real production
+    needs ALB for TLS termination + stable hostname + health checks +
+    target groups (Fargate ENIs rotate on every deploy). Now explicit."""
     profile = RepoProfile(app_type="fullstack_with_db")
     arch = recommend(profile)
     assert arch.pattern == "fullstack_with_db"
     services = [s.aws_service for s in arch.services]
+    assert "Application Load Balancer" in services
     assert "ECS Fargate" in services
     assert "RDS PostgreSQL" in services
     assert "App Runner" not in services
+    # ALB should be the first service — front-door / traffic-flow order.
+    assert services[0] == "Application Load Balancer"
 
 
 def test_spa_with_api_upgrades_to_fullstack_when_db_hints():

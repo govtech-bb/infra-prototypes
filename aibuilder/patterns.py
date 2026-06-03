@@ -208,8 +208,18 @@ _CATALOG: dict[str, Architecture] = {
         pattern="fullstack_with_db",
         services=[
             ArchitectureService(
+                aws_service="Application Load Balancer",
+                purpose=(
+                    "Front door for the Fargate task. Terminates TLS via an "
+                    "ACM cert, routes to the task on a target group, runs "
+                    "health checks, and gives you a stable hostname / IP "
+                    "(Fargate tasks rotate ENIs on every deploy)."
+                ),
+                sizing={"lcu_per_month": "<1 at prototype traffic"},
+            ),
+            ArchitectureService(
                 aws_service="ECS Fargate",
-                purpose="Hosts your web app container behind an Application Load Balancer.",
+                purpose="Hosts your web app container — managed, no EC2 hosts to patch.",
                 sizing={"vcpu": 0.25, "memory_gb": 0.5, "requests_per_month": 100_000},
             ),
             ArchitectureService(
