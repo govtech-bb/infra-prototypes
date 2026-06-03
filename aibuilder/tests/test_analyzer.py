@@ -104,3 +104,28 @@ def test_next_static_export_classified_as_static_site():
     profile = analyze_repo(str(FIXTURES / "next_static_export"))
     assert profile.app_type == "static_site"
     assert "next" in profile.frameworks
+
+
+def test_supabase_detected_as_database_hint(tmp_path: Path):
+    """Regression: Supabase usage in package.json should mark has_database_hints=True.
+    Caught running the bot against govtech-bb/st-thomas-sign-in — the analyzer
+    correctly flagged Next.js SSR but missed the Supabase Postgres backend.
+    Combined with the Next.js SSR detector, this should now land directly on
+    fullstack_with_db with no manual correction needed in the chat.
+    """
+    (tmp_path / "package.json").write_text(
+        '{"name":"x","dependencies":{"next":"14.2.0","react":"18.0.0",'
+        '"@supabase/ssr":"^0.5.0","@supabase/supabase-js":"^2.45.0"}}'
+    )
+    (tmp_path / "next.config.mjs").write_text("export default {}")
+    profile = analyze_repo(str(tmp_path))
+    assert profile.has_database_hints is True
+    assert profile.app_type == "fullstack_with_db"
+
+
+def test_firebase_detected_as_database_hint(tmp_path: Path):
+    (tmp_path / "package.json").write_text(
+        '{"name":"x","dependencies":{"react":"18.0.0","firebase":"^10.0.0"}}'
+    )
+    profile = analyze_repo(str(tmp_path))
+    assert profile.has_database_hints is True

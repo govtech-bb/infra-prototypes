@@ -66,9 +66,17 @@ _DB_HINT_KEYWORDS = (
     "postgresql",
     "mysql",
     "mongodb",
+    "mongoose",
     "redis",
+    # Managed backends: scanning package.json catches "@supabase/...",
+    # "firebase", "firebase-admin", etc. Scanning .env files catches
+    # SUPABASE_URL and FIREBASE_API_KEY style vars.
+    "supabase",
+    "firebase",
     "DATABASE_URL",
     "DB_HOST",
+    "SUPABASE_URL",
+    "FIREBASE_",
 )
 
 _ENTRY_POINT_NAMES = (
