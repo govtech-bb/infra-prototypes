@@ -160,11 +160,13 @@ _CATALOG: dict[str, Architecture] = {
         pattern="nextjs_amplify_hosting",
         services=[
             ArchitectureService(
-                aws_service="Amplify Hosting",
+                aws_service="AWS Amplify (Gen 2)",
                 purpose=(
-                    "AWS-native managed host for Next.js / Nuxt / Remix. Handles "
-                    "SSR, API routes, middleware, HTTPS, and the CDN out of the "
-                    "box. Scales to near-zero between requests."
+                    "AWS Amplify Gen 2 — the current-generation managed host for "
+                    "Next.js / Nuxt / Remix. TypeScript-first, code-defined "
+                    "backend (CDK under the hood), branch-based deploys with "
+                    "preview environments, and SSR / API routes / middleware "
+                    "handled out of the box. Scales to near-zero between requests."
                 ),
                 sizing={
                     "requests_per_month": 100_000,
@@ -174,10 +176,13 @@ _CATALOG: dict[str, Architecture] = {
             ),
         ],
         notes=[
+            "We're recommending Amplify Gen 2 specifically — Gen 1 (the older "
+            "console-driven Amplify Hosting) is in maintenance mode. If you're "
+            "starting fresh, Gen 2 is the right path.",
             "Assumes your database / backend lives outside AWS (e.g. Supabase, "
-            "Firebase, PlanetScale, Neon) — Amplify Hosting just runs your app. "
-            "If you'd rather move the database into AWS, ask me about ECS "
-            "Fargate + RDS PostgreSQL instead.",
+            "Firebase, PlanetScale, Neon) — Amplify just runs your app. If "
+            "you'd rather move the database into AWS, ask me about ECS Fargate "
+            "+ RDS PostgreSQL instead.",
             "Alternative: ECS Fargate if you need a Docker container, custom "
             "networking, or sidecars.",
         ],

@@ -102,8 +102,11 @@ def test_next_no_dockerfile_routes_to_amplify_hosting():
     )
     arch = recommend(profile)
     assert arch.pattern == "nextjs_amplify_hosting"
-    assert [s.aws_service for s in arch.services] == ["Amplify Hosting"]
+    # Specifically Gen 2 — Gen 1 is in maintenance mode and shouldn't be
+    # the default recommendation for new apps.
+    assert [s.aws_service for s in arch.services] == ["AWS Amplify (Gen 2)"]
     notes_text = " | ".join(arch.notes)
+    assert "Gen 2" in notes_text  # the explicit Gen 1 vs Gen 2 callout
     assert "managed" in notes_text.lower() or "Supabase" in notes_text
     assert "Fargate" in notes_text  # the migrate-DB-to-AWS alternative
 
