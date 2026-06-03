@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository purpose
 
-Two-part prototype for "deploy a static website to AWS via natural-language chat":
+Three-part prototype ecosystem:
 
 - `infra/` — OpenTofu (Terraform-compatible) stack that provisions an S3 + CloudFront static-site setup. Usable standalone via `make`.
 - `deploy-agent/` — FastAPI app that exposes a chat UI; Claude (`claude-opus-4-6`) is given four tools (`deploy_infrastructure`, `upload_files`, `list_deployments`, `destroy_infrastructure`) that shell out to `tofu` and `boto3` to drive the `infra/` stack.
+- `aibuilder/` — FastAPI app that takes a public GitHub repository URL, analyzes it to classify the application type (static site, Node.js, Python, etc.), recommends an AWS architecture from a curated pattern catalog, and returns a monthly cost estimate. Runs Claude with two tools (`analyze_repository`, `recommend_architecture`) to guide users toward production-ready AWS setups.
 
-The two pieces are siblings, not nested — `deploy-agent/tools.py` resolves `INFRA_DIR` as `../infra` relative to itself.
+All three pieces are siblings, not nested. `deploy-agent/tools.py` resolves `INFRA_DIR` as `../infra`; `aibuilder/tools.py` resolves `INFRA_DIR` similarly for reference.
 
 Public repo: <https://github.com/christophercorbin/infra-prototypes>. CI runs ruff + pytest + tofu validate on every push/PR.
 
@@ -149,6 +150,51 @@ The agent's system prompt (`agent.py:SYSTEM_PROMPT`) defines four flows:
 - File uploads preserve nested paths and reject `..` traversal / absolute paths / Windows backslashes with HTTP 400. `examples/sample-site/assets/logo.svg` is the regression fixture — if you break path preservation, the smoke test fails.
 - `force_destroy = true` is set on the s3 bucket. Existing deployments don't have this in their state until they're re-applied; the agent's `_empty_bucket` helper covers the gap by emptying via boto3 before `tofu destroy`.
 - Sessions persisted in SQLite have an `ALTER TABLE ADD COLUMN` migration in `SqliteSessionStore.__init__` (currently for `last_injected_file_count`). The migration is wrapped in `try/except sqlite3.OperationalError` so it's idempotent. If you add another column later, add another defensive ALTER.
+
+## aibuilder
+
+Chat-first AWS architecture recommendation engine. Takes a public GitHub URL, analyzes the codebase to classify the application, recommends an optimal AWS architecture from a curated catalog, and returns a monthly cost estimate.
+
+### Commands
+
+```bash
+cd aibuilder
+cp .env.example .env             # then edit .env with ANTHROPIC_API_KEY
+./run.sh                          # creates ./.venv, installs deps, runs uvicorn on :8001
+```
+
+`./run.sh` auto-loads `aibuilder/.env` if present (`.env` is gitignored; `.env.example` is committed). Gates on `ANTHROPIC_API_KEY`. Open <http://localhost:8001>.
+
+### Make targets (`aibuilder/Makefile`)
+
+```bash
+make install        # production deps
+make install-dev    # adds pytest, ruff
+make check          # ruff + pytest
+make test           # just pytest
+make format         # ruff check --fix && ruff format
+```
+
+### Architecture
+
+Modular agent with five support libraries:
+
+- **`app.py`** — FastAPI chat endpoint (`/api/chat/{session_id}`), file upload path, and session management hooks.
+- **`agent.py`** — Hand-rolled tool-use loop (`run_agent_loop`, `MAX_AGENT_ITERATIONS = 15`, overridable in tests) that consumes cumulative `session.messages`, calls Claude (`claude-opus-4-6`), and dispatches tool calls via `tools.execute_tool`.
+- **`analyzer.py`** — Repository analysis: clones git repos locally, detects language/framework via file signatures, counts lines of code, identifies data stores (databases, message queues, external APIs).
+- **`patterns.py`** — Curated AWS architecture catalog. Each pattern is a `Pattern` named tuple with `name`, `summary`, `services`, `monthly_estimate_usd`. Patterns keyed by app type (e.g., "static-site", "nodejs-web", "python-async-jobs"). Pattern selection is deterministic — no LLM hallucination of services.
+- **`pricing.py`** — Cost calculation. Returns `{monthly_estimate_usd, currency, is_fallback: true}`. Phase 1.5 will replace the hand-curated fallback table with live AWS Pricing API calls; today all estimates have `is_fallback: true`.
+- **`tools.py`** — Two tools (`analyze_repository`, `recommend_architecture`), both synchronous. `analyze_repository` takes a GitHub URL, clones it, inspects file structure, and returns metadata (app_type, language, framework, estimated_lines_of_code, detected_services). `recommend_architecture` takes the analysis metadata and returns a recommended pattern plus cost estimate.
+- **`sessions.py`** — SQLite-backed session store (`SqliteSessionStore`). Persists `session.messages` for multi-turn context. Pinned at `aibuilder/data/sessions.db` (override with `AIBUILDER_DB` env var for tests).
+
+### Things that will bite you
+
+- **Port 8001** — aibuilder runs on `:8001` (deploy-agent uses `:8000`). When running both locally, mind the port collision.
+- **Repository cloning** — git clones are cached under `aibuilder/tmp/repos/{session_id}/`. This directory is gitignored but grows unbounded across sessions. Cleanup is manual (no automatic prune yet).
+- **File and size guards** — `AIBUILDER_MAX_FILES` defaults to 5000 and `AIBUILDER_MAX_SIZE_MB` to 500. Repos exceeding either limit are rejected early (`clone_repository` returns an error dict, not a raised exception).
+- **Pattern catalog is the source of truth** — The system prompt forbids the agent from inventing AWS services or making up cost figures. All recommendations and estimates come from `patterns.py`. If a service isn't in the catalog, the agent can't recommend it, and pricing is always fallback (static table).
+- **Cost estimates are fallback (v1)** — All estimates have `is_fallback: true`. No live Pricing API calls yet. The hand-curated table in `pricing.py` is the Phase 1 baseline; Phase 1.5 will migrate to dynamic pricing via AWS's Price List API.
+- **Sessions persisted in SQLite** — Like deploy-agent, aibuilder uses `ALTER TABLE ADD COLUMN` for schema migrations (wrapped in `try/except sqlite3.OperationalError`). If you add another column later, follow the same defensive pattern.
 
 ## Design / plan archive
 
