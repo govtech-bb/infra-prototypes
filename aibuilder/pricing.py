@@ -51,15 +51,32 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
     "EventBridge Scheduler": (0.00, "<1k invocations/mo is in the free tier"),
 }
 
-_BASELINE_ASSUMPTIONS = [
-    "Region: us-east-1",
-    "~100,000 requests per month",
-    "~5 GB CloudFront egress",
-    "Lambda: 256 MB memory, 200 ms avg duration",
-    "App Runner: 0.25 vCPU / 0.5 GB, scales to zero after idle",
-    "RDS: db.t4g.micro, 20 GB gp3, Single-AZ",
-    "Numbers are rough starting points — actual cost depends on real traffic.",
+# Per-service sizing/traffic assumptions. Only contribute to the user-facing
+# `assumptions` list when the matching service is actually in the architecture.
+# (The previous _BASELINE_ASSUMPTIONS list returned all of these unconditionally,
+# which leaked CloudFront/Lambda assumptions into App-Runner-only estimates.)
+_PER_SERVICE_ASSUMPTIONS: dict[str, str] = {
+    "CloudFront": "~5 GB CloudFront egress per month",
+    "Lambda": "Lambda: 256 MB memory, 200 ms avg duration",
+    "App Runner": "App Runner: 0.25 vCPU / 0.5 GB, scales to zero after idle",
+    "RDS PostgreSQL": "RDS: db.t4g.micro, 20 GB gp3, Single-AZ",
+}
+
+_ALWAYS_ASSUMPTIONS_HEAD = ["Region: us-east-1"]
+_ALWAYS_ASSUMPTIONS_TAIL = [
+    "Numbers are rough starting points — actual cost depends on real traffic."
 ]
+
+
+def _build_assumptions(architecture: Architecture) -> list[str]:
+    seen: set[str] = set()
+    per_service: list[str] = []
+    for svc in architecture.services:
+        line = _PER_SERVICE_ASSUMPTIONS.get(svc.aws_service)
+        if line and line not in seen:
+            per_service.append(line)
+            seen.add(line)
+    return _ALWAYS_ASSUMPTIONS_HEAD + per_service + _ALWAYS_ASSUMPTIONS_TAIL
 
 
 def estimate(architecture: Architecture) -> CostEstimate:
@@ -80,6 +97,6 @@ def estimate(architecture: Architecture) -> CostEstimate:
     return CostEstimate(
         lines=lines,
         total_monthly_usd=total,
-        assumptions=_BASELINE_ASSUMPTIONS,
+        assumptions=_build_assumptions(architecture),
         is_fallback=True,
     )
