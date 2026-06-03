@@ -80,11 +80,15 @@ def test_python_api_promotes_lambda_web_adapter():
         assert lwa_idx < mangum_idx, "LWA should appear before Mangum in notes"
 
 
-def test_dockerized_web_default_is_fargate():
+def test_dockerized_web_default_is_alb_plus_fargate():
+    """Audit follow-up #13 (parallel to #12): Fargate alone can't serve real
+    HTTPS traffic with a stable hostname — needs an ALB. Make it explicit so
+    the cost line reflects production reality."""
     profile = RepoProfile(app_type="dockerized_web")
     arch = recommend(profile)
     services = [s.aws_service for s in arch.services]
-    assert services == ["ECS Fargate"]
+    # ALB first (front-door, traffic-flow order); Fargate second.
+    assert services == ["Application Load Balancer", "ECS Fargate"]
     assert "App Runner" not in services
     # Notes should still mention the simpler-config alternative.
     assert any("ECS Express" in n for n in arch.notes)

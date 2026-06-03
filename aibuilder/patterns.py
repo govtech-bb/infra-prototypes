@@ -187,6 +187,16 @@ _CATALOG: dict[str, Architecture] = {
         pattern="dockerized_web",
         services=[
             ArchitectureService(
+                aws_service="Application Load Balancer",
+                purpose=(
+                    "Front door for the Fargate task. Terminates TLS via an "
+                    "ACM cert, routes to the task on a target group, runs "
+                    "health checks, and gives you a stable hostname (Fargate "
+                    "ENIs rotate on every deploy)."
+                ),
+                sizing={"lcu_per_month": "<1 at prototype traffic"},
+            ),
+            ArchitectureService(
                 aws_service="ECS Fargate",
                 purpose=(
                     "Runs your container as a managed service — no cluster "
