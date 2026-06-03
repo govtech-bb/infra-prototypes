@@ -51,6 +51,9 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
     # 5,000 GB-s * $0.0000166667 = $0.083 compute. Total ~= $0.10. Free tier covers
     # most of this; $0.10 is the honest fully-charged number.
     "Lambda": (0.10, "~100k invocations at 256 MB / 200 ms (compute dominates over requests)"),
+    # Lambda Function URLs are free — no per-URL or per-request fee. Only the
+    # underlying Lambda invocations meter (and those are priced under "Lambda").
+    "Lambda Function URL": (0.00, "Function URLs are free — only Lambda compute meters separately"),
     # ECS Fargate runs 24/7 — no scale-to-zero. ~$0.04/vCPU-hr + ~$0.0044/GB-hr;
     # 0.25 vCPU / 0.5 GB / 730 hr/mo ≈ $9. Rounded to $9 to keep prototype-tier honest.
     "ECS Fargate": (9.00, "0.25 vCPU / 0.5 GB, runs 24/7 (Fargate doesn't pause idle tasks)"),

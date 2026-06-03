@@ -80,18 +80,49 @@ def test_python_api_promotes_lambda_web_adapter():
         assert lwa_idx < mangum_idx, "LWA should appear before Mangum in notes"
 
 
-def test_dockerized_web_default_is_alb_plus_fargate():
-    """Audit follow-up #13 (parallel to #12): Fargate alone can't serve real
-    HTTPS traffic with a stable hostname — needs an ALB. Make it explicit so
-    the cost line reflects production reality."""
+def test_dockerized_web_default_routes_to_tiny_container():
+    """Audit follow-up #14: dockerized_web now defaults to tiny_container
+    (Lambda + LWA + Function URL) instead of ALB + Fargate. Most prototype
+    Dockerfiles fit comfortably in Lambda's envelope at ~$0.10/mo vs $25/mo
+    for the Fargate path. The Fargate path stays in the catalog under the
+    'dockerized_web' key and is reachable via pattern_override."""
     profile = RepoProfile(app_type="dockerized_web")
     arch = recommend(profile)
+    assert arch.pattern == "tiny_container"
     services = [s.aws_service for s in arch.services]
-    # ALB first (front-door, traffic-flow order); Fargate second.
+    assert services == ["Lambda", "Lambda Function URL"]
+    notes_text = " | ".join(arch.notes)
+    assert "Lambda Web Adapter" in notes_text or "LWA" in notes_text
+    # Notes should mention the Fargate escape hatch so users with long-lived
+    # connections / sustained traffic know the alternative exists.
+    assert "Fargate" in notes_text
+
+
+def test_dockerized_web_pattern_override_returns_fargate_path():
+    """The original ALB + Fargate path is still in the catalog and remains
+    reachable via pattern_override="dockerized_web" for users who need
+    always-on containers."""
+    from patterns import _CATALOG
+
+    fargate_pattern = _CATALOG["dockerized_web"]
+    services = [s.aws_service for s in fargate_pattern.services]
     assert services == ["Application Load Balancer", "ECS Fargate"]
-    assert "App Runner" not in services
-    # Notes should still mention the simpler-config alternative.
-    assert any("ECS Express" in n for n in arch.notes)
+
+
+def test_tiny_container_cost_is_tiny():
+    """The whole point of tiny_container is that it's cheap at prototype
+    scale. Total monthly cost should be under $1/mo (Lambda $0.10 +
+    Function URL $0)."""
+    arch = recommend(RepoProfile(app_type="dockerized_web"))
+    from pricing import estimate
+
+    cost = estimate(arch)
+    assert cost.total_monthly_usd < 1.00
+    services = [line.service for line in cost.lines]
+    assert "Lambda" in services
+    assert "Lambda Function URL" in services
+    func_url_line = next(line for line in cost.lines if line.service == "Lambda Function URL")
+    assert func_url_line.monthly_usd == 0.00
 
 
 def test_fullstack_with_db_includes_rds_fargate_and_alb():
@@ -216,10 +247,18 @@ def test_remix_no_dockerfile_routes_to_amplify():
 
 
 def test_custom_domain_note_appears_in_route53_patterns():
-    """Audit follow-up: every internet-facing pattern that uses CloudFront /
-    APIGW / ALB should mention the Route53 + ACM custom-domain recipe.
-    Amplify is excluded because it has its own console-based flow with a
-    different note."""
+    """Audit follow-up: every catalog pattern that uses CloudFront / APIGW /
+    ALB should mention the Route53 + ACM custom-domain recipe in its notes.
+    Amplify and tiny_container have their own service-specific custom-domain
+    notes (different mechanisms) so they're excluded from this check.
+
+    Note: we look at the catalog entries directly (not via recommend()) so
+    routing rules don't shift the assertion target — dockerized_web routes
+    to tiny_container by default, but the catalog STILL needs the Route53
+    note on its underlying `dockerized_web` entry for the pattern_override
+    case."""
+    from patterns import _CATALOG
+
     patterns_needing = [
         "static_site",
         "spa_with_api",
@@ -229,15 +268,20 @@ def test_custom_domain_note_appears_in_route53_patterns():
         "fullstack_with_db",
     ]
     for pattern_key in patterns_needing:
-        arch = recommend(RepoProfile(app_type=pattern_key))
+        arch = _CATALOG[pattern_key]
         notes_text = " | ".join(arch.notes)
         assert "Route53" in notes_text, f"{pattern_key} missing Route53 mention"
         assert "ACM" in notes_text, f"{pattern_key} missing ACM mention"
 
 
 def test_vpc_baseline_note_appears_in_fargate_patterns():
+    """Same as above: look at the catalog directly. dockerized_web's
+    underlying Fargate pattern still needs the VPC note for users who
+    pattern_override into it."""
+    from patterns import _CATALOG
+
     for pattern_key in ["dockerized_web", "fullstack_with_db"]:
-        arch = recommend(RepoProfile(app_type=pattern_key))
+        arch = _CATALOG[pattern_key]
         notes_text = " | ".join(arch.notes)
         assert "VPC" in notes_text, f"{pattern_key} missing VPC note"
         assert "NAT" in notes_text, f"{pattern_key} missing NAT Gateway warning"

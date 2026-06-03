@@ -311,6 +311,51 @@ _CATALOG: dict[str, Architecture] = {
             "instead of managed hosting.",
         ],
     ),
+    "tiny_container": Architecture(
+        pattern="tiny_container",
+        services=[
+            ArchitectureService(
+                aws_service="Lambda",
+                purpose=(
+                    "Runs your Docker image as a Lambda function (up to 10 GB "
+                    "image). AWS Lambda Web Adapter (LWA) wraps the container's "
+                    "HTTP server so Lambda invokes it via the standard event "
+                    "model — same image runs locally and on Lambda, no code "
+                    "changes. Scales to zero between requests."
+                ),
+                sizing={"memory_mb": 256, "duration_ms": 200, "requests_per_month": 100_000},
+            ),
+            ArchitectureService(
+                aws_service="Lambda Function URL",
+                purpose=(
+                    "Public HTTPS endpoint built into Lambda — no API Gateway "
+                    "needed. Free. Auth options: IAM-signed or none."
+                ),
+                sizing={"requests_per_month": 100_000},
+            ),
+        ],
+        notes=[
+            "This is the cheap, scale-to-zero answer when you have a Dockerfile "
+            "but don't need always-on Fargate. Best for: prototypes, internal "
+            "tools, low-traffic public APIs, webhook receivers.",
+            "Constraints to know: request timeout caps at 15 min, memory caps "
+            "at 10 GB, image caps at 10 GB. Cold starts run 1-3s for container "
+            "images vs <500ms for zip-based Lambdas — fine for human-facing "
+            "requests, less fine for sub-100ms latency SLOs.",
+            "Lambda Web Adapter is the AWS-blessed wrapper. Supports Express, "
+            "FastAPI, Flask, Django, Gin, Spring Boot, Next.js standalone, "
+            "anything that listens on a port. Ship as a Lambda layer or as a "
+            "base-image extension.",
+            "Alternative: ECS Fargate + ALB (~$25/mo) if you need long-lived "
+            "connections (WebSockets, SSE), sustained high traffic where Lambda "
+            "compute would outprice Fargate, or sub-second cold starts. Ask me "
+            "for the 'Fargate alternative' and I'll switch.",
+            "For a custom domain, front the Function URL with CloudFront and "
+            "an ACM cert in us-east-1 (Function URLs don't take custom domains "
+            "directly).",
+            _CLOUDWATCH_RETENTION_NOTE,
+        ],
+    ),
     "worker": Architecture(
         pattern="worker",
         services=[
@@ -370,5 +415,14 @@ def recommend(profile: RepoProfile) -> Architecture:
         and not profile.has_dockerfile
     ):
         pattern_key = "nextjs_amplify_hosting"
+
+    # tiny_container is the default for dockerized_web at prototype scale:
+    # Lambda + LWA + Function URL is ~12x cheaper than ALB + Fargate
+    # ($0.10 vs $25/mo) and scales to zero. Users who genuinely need
+    # always-on Fargate (long-lived connections, sustained traffic, sub-
+    # second cold starts) can request the original ALB+Fargate path via
+    # `pattern_override="dockerized_web"`.
+    if pattern_key == "dockerized_web":
+        pattern_key = "tiny_container"
 
     return _CATALOG[pattern_key]
