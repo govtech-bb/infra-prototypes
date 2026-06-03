@@ -1,7 +1,7 @@
 """Tests for the AWS architecture pattern catalog."""
 
 from analyzer import RepoProfile
-from patterns import Architecture, ArchitectureService, recommend
+from patterns import Architecture, recommend
 
 
 def test_static_site_pattern():

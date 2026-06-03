@@ -1,6 +1,5 @@
 """Tests for the FastAPI endpoints."""
 
-import os
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +12,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-for-tests")
     # Reset import so the module picks up the patched env vars.
     import importlib
+
     import app as app_module
 
     importlib.reload(app_module)

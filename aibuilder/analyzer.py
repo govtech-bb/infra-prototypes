@@ -191,9 +191,7 @@ def _classify(
     has_node_api = bool(pkg_set & _NODE_API_FRAMEWORKS)
     has_python_api = bool(py_set & _PYTHON_API_FRAMEWORKS)
     has_node_frontend = bool(pkg_set & _NODE_FRONTEND_FRAMEWORKS)
-    has_worker = bool(
-        (pkg_set & _NODE_WORKER_FRAMEWORKS) or (py_set & _PYTHON_WORKER_FRAMEWORKS)
-    )
+    has_worker = bool((pkg_set & _NODE_WORKER_FRAMEWORKS) or (py_set & _PYTHON_WORKER_FRAMEWORKS))
 
     if has_node_frontend and (has_node_api or has_python_api):
         return "fullstack_with_db" if has_database_hints else "spa_with_api"

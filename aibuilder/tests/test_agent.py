@@ -19,9 +19,17 @@ def test_system_prompt_mentions_four_stage_workflow():
 def _stub_response(text: str, *, stop_reason: str = "end_turn", tool_calls: list | None = None):
     blocks = []
     if text:
-        blocks.append(SimpleNamespace(type="text", text=text, model_dump=lambda: {"type": "text", "text": text}))
+        blocks.append(
+            SimpleNamespace(
+                type="text", text=text, model_dump=lambda: {"type": "text", "text": text}
+            )
+        )
     for call in tool_calls or []:
-        blocks.append(SimpleNamespace(type="tool_use", **call, model_dump=lambda c=call: {"type": "tool_use", **c}))
+        blocks.append(
+            SimpleNamespace(
+                type="tool_use", **call, model_dump=lambda c=call: {"type": "tool_use", **c}
+            )
+        )
     return SimpleNamespace(stop_reason=stop_reason, content=blocks)
 
 

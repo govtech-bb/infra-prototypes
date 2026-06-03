@@ -1,7 +1,7 @@
 """Tests for cost estimation."""
 
-from patterns import recommend, Architecture, ArchitectureService
 from analyzer import RepoProfile
+from patterns import Architecture, ArchitectureService, recommend
 from pricing import CostEstimate, CostLine, estimate
 
 
