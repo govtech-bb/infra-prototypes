@@ -107,8 +107,13 @@ def test_next_no_dockerfile_routes_to_amplify_hosting():
     assert [s.aws_service for s in arch.services] == ["AWS Amplify (Gen 2)"]
     notes_text = " | ".join(arch.notes)
     assert "Gen 2" in notes_text  # the explicit Gen 1 vs Gen 2 callout
-    assert "managed" in notes_text.lower() or "Supabase" in notes_text
-    assert "Fargate" in notes_text  # the migrate-DB-to-AWS alternative
+    # Regression: user asked "doesn't Amplify v2 have a database?" — the
+    # notes used to imply you HAD to bring an external DB. The bundled
+    # AppSync + DynamoDB / Cognito / S3 / Lambda primitives must be called
+    # out, and external backends must be framed as opt-in (not required).
+    assert "AppSync" in notes_text and "DynamoDB" in notes_text
+    assert "opt-in" in notes_text.lower()
+    assert "Fargate" in notes_text  # the BYO-Postgres-and-containers alternative
 
 
 def test_next_with_db_hints_and_no_dockerfile_routes_to_amplify():

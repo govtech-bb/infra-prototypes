@@ -177,14 +177,21 @@ _CATALOG: dict[str, Architecture] = {
         ],
         notes=[
             "We're recommending Amplify Gen 2 specifically — Gen 1 (the older "
-            "console-driven Amplify Hosting) is in maintenance mode. If you're "
-            "starting fresh, Gen 2 is the right path.",
-            "Assumes your database / backend lives outside AWS (e.g. Supabase, "
-            "Firebase, PlanetScale, Neon) — Amplify just runs your app. If "
-            "you'd rather move the database into AWS, ask me about ECS Fargate "
-            "+ RDS PostgreSQL instead.",
-            "Alternative: ECS Fargate if you need a Docker container, custom "
-            "networking, or sidecars.",
+            "console-driven Amplify Hosting) is in maintenance mode.",
+            "Amplify Gen 2 also bundles a data layer (AppSync + DynamoDB), "
+            "auth (Cognito), file storage (S3), and Lambda functions — all "
+            "defined in TypeScript alongside your app via `defineData`, "
+            "`defineAuth`, etc. The $3/mo above is hosting only; the bundled "
+            "primitives meter separately but are usually covered by the AWS "
+            "free tier at prototype traffic.",
+            "If your repo already uses an external backend (Supabase, "
+            "Firebase, PlanetScale, Neon), you can keep it — Amplify Hosting "
+            "just runs your app, the bundled data layer is opt-in. To move "
+            "off your external DB later, you can adopt AppSync+DynamoDB "
+            "incrementally or migrate to ECS Fargate + RDS PostgreSQL.",
+            "Alternative: ECS Fargate + RDS PostgreSQL if you want a "
+            "traditional Postgres database (vs DynamoDB) and BYO containers "
+            "instead of managed hosting.",
         ],
     ),
     "worker": Architecture(
