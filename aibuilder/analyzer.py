@@ -8,6 +8,7 @@ what kind of app this is.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -45,10 +46,20 @@ _LANGUAGE_EXTS = {
 }
 
 _NODE_API_FRAMEWORKS = {"express", "fastify", "koa", "@hapi/hapi", "@nestjs/core"}
-_NODE_FRONTEND_FRAMEWORKS = {"react", "vue", "svelte", "next", "@angular/core"}
+_NODE_FRONTEND_FRAMEWORKS = {"react", "vue", "svelte", "next", "nuxt", "remix", "@angular/core"}
+# Frameworks whose DEFAULT build mode produces a server runtime (SSR + API
+# routes + middleware). For these, classifying as `static_site` based on
+# "frontend framework, no Express" is wrong — see _is_static_export for the
+# escape hatch when the project is explicitly configured for static export.
+_SERVER_DEFAULT_FRONTEND_FRAMEWORKS = {"next", "nuxt", "remix"}
 _PYTHON_API_FRAMEWORKS = {"fastapi", "flask", "django"}
 _NODE_WORKER_FRAMEWORKS = {"bull", "bullmq", "agenda"}
 _PYTHON_WORKER_FRAMEWORKS = {"celery", "rq", "huey"}
+
+# Match `output: "export"` (Next.js static export) in any quoting/spacing variant.
+_NEXT_STATIC_EXPORT_RE = re.compile(r"""output\s*:\s*['"]export['"]""")
+# Match Nuxt's static preset/target.
+_NUXT_STATIC_RE = re.compile(r"""(preset|target)\s*:\s*['"]static['"]""")
 
 _DB_HINT_KEYWORDS = (
     "postgres",
@@ -108,8 +119,13 @@ def analyze_repo(path: str) -> RepoProfile:
     entry_points = [n for n in _ENTRY_POINT_NAMES if n in file_names]
     build_command = "npm run build" if pkg_scripts.get("build") else None
 
-    app_type = _classify(file_names, pkg_deps, py_deps, has_dockerfile, has_database_hints)
-    summary = _build_summary(app_type, languages, frameworks, has_dockerfile, has_database_hints)
+    needs_server_runtime = _needs_server_runtime(root, set(pkg_deps))
+    app_type = _classify(
+        file_names, pkg_deps, py_deps, has_dockerfile, has_database_hints, needs_server_runtime
+    )
+    summary = _build_summary(
+        app_type, languages, frameworks, has_dockerfile, has_database_hints, needs_server_runtime
+    )
 
     return RepoProfile(
         app_type=app_type,
@@ -156,6 +172,45 @@ def _parse_python_deps(root: Path) -> dict[str, str]:
     return deps
 
 
+def _needs_server_runtime(root: Path, pkg_deps: set[str]) -> bool:
+    """True when a frontend framework is present AND it'd be wrong to assume
+    static-only output. Next.js/Nuxt/Remix default to SSR + API routes; Astro
+    and SvelteKit are not in this set because they default to static or are
+    too adapter-dependent to call here.
+
+    Escape hatch: if the project's config file explicitly opts into static
+    export (Next.js `output: "export"`, Nuxt `preset|target: "static"`), we
+    return False and let the classifier fall through to `static_site`.
+    """
+    if not (pkg_deps & _SERVER_DEFAULT_FRONTEND_FRAMEWORKS):
+        return False
+    if "next" in pkg_deps and _config_matches(
+        root,
+        ("next.config.js", "next.config.mjs", "next.config.ts", "next.config.cjs"),
+        _NEXT_STATIC_EXPORT_RE,
+    ):
+        return False
+    if "nuxt" in pkg_deps and _config_matches(
+        root, ("nuxt.config.js", "nuxt.config.mjs", "nuxt.config.ts"), _NUXT_STATIC_RE
+    ):
+        return False
+    # Remix has no static-only mode — always needs a server.
+    return True
+
+
+def _config_matches(root: Path, names: tuple[str, ...], pattern: re.Pattern[str]) -> bool:
+    for name in names:
+        cfg = root / name
+        if not cfg.exists():
+            continue
+        try:
+            if pattern.search(cfg.read_text()):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _detect_db_hints(root: Path, deps: set[str]) -> bool:
     if any(d.lower() in {"pg", "psycopg2", "psycopg", "pymongo", "mysql2", "mysql"} for d in deps):
         return True
@@ -184,6 +239,7 @@ def _classify(
     py_deps: dict[str, str],
     has_dockerfile: bool,
     has_database_hints: bool,
+    needs_server_runtime: bool,
 ) -> str:
     pkg_set = set(pkg_deps)
     py_set = set(py_deps)
@@ -193,7 +249,9 @@ def _classify(
     has_node_frontend = bool(pkg_set & _NODE_FRONTEND_FRAMEWORKS)
     has_worker = bool((pkg_set & _NODE_WORKER_FRAMEWORKS) or (py_set & _PYTHON_WORKER_FRAMEWORKS))
 
-    if has_node_frontend and (has_node_api or has_python_api):
+    # Frontend + explicit API framework, OR frontend that needs a server runtime
+    # by itself (Next.js/Nuxt/Remix without static-export config).
+    if (has_node_frontend and (has_node_api or has_python_api)) or needs_server_runtime:
         return "fullstack_with_db" if has_database_hints else "spa_with_api"
     if "index.html" in file_names and not (pkg_set or py_set):
         return "static_site"
@@ -216,6 +274,7 @@ def _build_summary(
     frameworks: list[str],
     has_dockerfile: bool,
     has_database_hints: bool,
+    needs_server_runtime: bool = False,
 ) -> str:
     if app_type == "unknown":
         return "I couldn't tell what kind of app this is from the files in the repo."
@@ -234,4 +293,9 @@ def _build_summary(
     docker = " It includes a Dockerfile." if has_dockerfile else ""
     db = " It looks like it talks to a database." if has_database_hints else ""
     langs = f" Languages detected: {', '.join(languages)}." if languages else ""
-    return f"This looks like {type_phrase}{fw}.{langs}{docker}{db}".strip()
+    ssr = (
+        " It needs a Node server runtime (server-side rendering / API routes)."
+        if needs_server_runtime
+        else ""
+    )
+    return f"This looks like {type_phrase}{fw}.{langs}{docker}{db}{ssr}".strip()

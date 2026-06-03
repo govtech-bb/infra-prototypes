@@ -85,3 +85,22 @@ def test_summary_for_unknown_repo(tmp_path: Path):
     profile = analyze_repo(str(tmp_path))
     assert profile.app_type == "unknown"
     assert "couldn't tell" in profile.summary.lower()
+
+
+def test_next_ssr_classified_as_spa_with_api():
+    """Next.js is server-rendered by default — needs a Node runtime, not S3+CF.
+    Regression: surfaced during real testing against govtech-bb/st-thomas-sign-in.
+    """
+    profile = analyze_repo(str(FIXTURES / "next_ssr"))
+    assert profile.app_type == "spa_with_api"
+    assert "next" in profile.frameworks
+    assert "react" in profile.frameworks
+    assert "server" in profile.summary.lower()
+
+
+def test_next_static_export_classified_as_static_site():
+    """Next.js WITH `output: "export"` in next.config genuinely IS static —
+    should land on S3+CloudFront, not App Runner."""
+    profile = analyze_repo(str(FIXTURES / "next_static_export"))
+    assert profile.app_type == "static_site"
+    assert "next" in profile.frameworks
