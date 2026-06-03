@@ -44,19 +44,25 @@ class CostEstimate:
 _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
     "S3": (0.10, "~1 GB stored + ~10k GET requests"),
     "CloudFront": (0.50, "~5 GB data out + ~100k requests (free tier covers most prototypes)"),
-    "API Gateway": (0.35, "~100k HTTP API requests"),
-    "Lambda": (0.10, "~100k invocations at 256 MB / 200 ms"),
+    # HTTP API: $1/M requests in us-east-1. 100k req = $0.10.
+    # (Previous $0.35 was REST-API priced and silently mislabeled.)
+    "API Gateway (HTTP API)": (0.10, "~100k HTTP API requests at $1/M"),
+    # Lambda: 100k inv * $0.20/M = $0.02 request cost, plus 100k * 0.2s * 0.25 GB =
+    # 5,000 GB-s * $0.0000166667 = $0.083 compute. Total ~= $0.10. Free tier covers
+    # most of this; $0.10 is the honest fully-charged number.
+    "Lambda": (0.10, "~100k invocations at 256 MB / 200 ms (compute dominates over requests)"),
     # ECS Fargate runs 24/7 — no scale-to-zero. ~$0.04/vCPU-hr + ~$0.0044/GB-hr;
     # 0.25 vCPU / 0.5 GB / 730 hr/mo ≈ $9. Rounded to $9 to keep prototype-tier honest.
     "ECS Fargate": (9.00, "0.25 vCPU / 0.5 GB, runs 24/7 (Fargate doesn't pause idle tasks)"),
-    # Amplify Gen 2 hosting: free tier covers most low-traffic prototypes
-    # (1000 build min/mo + 15 GB served + 5 GB stored). SSR compute meters
-    # separately at ~$0.30 per 1M requests + $0.20 per GB-hr. For 100k
-    # requests at 50ms / 512 MB, the SSR bill is ~$0.15-2/mo. $3 is a safe
-    # round number that won't surprise users when traffic ticks up.
+    # Amplify Gen 2 hosting: build minutes (1000/mo free) + hosting served
+    # ($0.15/GB, first 15 GB free) + SSR ($0.30/M requests + $0.20/GB-hr).
+    # For 100k req + 5 GB served + ~1 GB-hr SSR: request cost $0.03, SSR
+    # compute $0.20, hosting + build usually inside free tier → ~$0.25 actual.
+    # $1 is a conservative round that covers a bit more SSR traffic and the
+    # occasional build-minute overflow on busy branch-preview workflows.
     "AWS Amplify (Gen 2)": (
-        3.00,
-        "~100k requests + ~5 GB served + SSR via managed compute",
+        1.00,
+        "~100k requests + ~5 GB served + ~1 GB-hr SSR compute (most of this lands in free tier)",
     ),
     "RDS PostgreSQL": (12.00, "db.t4g.micro, 20 GB gp3, Single-AZ"),
     "EventBridge Scheduler": (0.00, "<1k invocations/mo is in the free tier"),

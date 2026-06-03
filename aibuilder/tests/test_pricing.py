@@ -54,6 +54,33 @@ def test_cost_line_dataclass():
     assert line.note == "1 GB stored"
 
 
+def test_api_gateway_priced_as_http_api():
+    """Audit follow-up: catalog used to label the price as 'API Gateway'
+    but the dollar amount was actually REST-API priced (~3.5x too high).
+    Now the key is 'API Gateway (HTTP API)' at $0.10 / 100k requests."""
+    arch = recommend(RepoProfile(app_type="node_api"))
+    result = estimate(arch)
+    services = [line.service for line in result.lines]
+    assert "API Gateway (HTTP API)" in services
+    apigw_line = next(line for line in result.lines if line.service == "API Gateway (HTTP API)")
+    assert apigw_line.monthly_usd == 0.10
+
+
+def test_amplify_priced_for_free_tier_mostly_covered():
+    """Audit follow-up: Amplify Gen 2 was $3/mo; real usage at the catalog's
+    sizing (100k req + 5 GB + 1 GB-hr SSR) is closer to $0.25 actual,
+    bumped to $1 conservative round."""
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["next", "react"],
+        has_dockerfile=False,
+    )
+    arch = recommend(profile)
+    result = estimate(arch)
+    amplify_line = next(line for line in result.lines if line.service == "AWS Amplify (Gen 2)")
+    assert amplify_line.monthly_usd == 1.00
+
+
 def test_assumptions_match_chosen_services():
     """Regression: prior to this fix, estimate() always returned the full
     `_BASELINE_ASSUMPTIONS` list — so a fullstack_with_db estimate (App

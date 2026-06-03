@@ -17,7 +17,26 @@ def test_spa_with_api_pattern():
     profile = RepoProfile(app_type="spa_with_api")
     arch = recommend(profile)
     assert arch.pattern == "spa_with_api"
-    assert [s.aws_service for s in arch.services] == ["S3", "CloudFront", "API Gateway", "Lambda"]
+    assert [s.aws_service for s in arch.services] == [
+        "S3",
+        "CloudFront",
+        "API Gateway (HTTP API)",
+        "Lambda",
+    ]
+    # SPA-specific notes added in the catalog audit follow-up.
+    notes_text = " | ".join(arch.notes)
+    assert "OAC" in notes_text or "Origin Access Control" in notes_text
+    assert "403" in notes_text and "404" in notes_text  # SPA error handling
+    assert "/index.html" in notes_text
+
+
+def test_static_site_has_oac_note():
+    """Audit follow-up: every S3+CloudFront pattern should mention OAC
+    (OAI is in maintenance)."""
+    profile = RepoProfile(app_type="static_site")
+    arch = recommend(profile)
+    notes_text = " | ".join(arch.notes)
+    assert "OAC" in notes_text or "Origin Access Control" in notes_text
 
 
 def test_node_api_default_is_lambda():
@@ -29,7 +48,9 @@ def test_node_api_default_is_lambda():
     arch = recommend(profile)
     assert arch.pattern == "node_api"
     services = [s.aws_service for s in arch.services]
-    assert services == ["API Gateway", "Lambda"]
+    # HTTP API specifically — REST API is ~3.5x the price and only worth it
+    # for usage plans / WAF on the stage / private APIs / etc.
+    assert services == ["API Gateway (HTTP API)", "Lambda"]
     # The catalog must never recommend App Runner.
     assert "App Runner" not in services
     assert not any("App Runner" in n for n in arch.notes)
@@ -40,8 +61,23 @@ def test_python_api_default_is_lambda():
     profile = RepoProfile(app_type="python_api")
     arch = recommend(profile)
     services = [s.aws_service for s in arch.services]
-    assert services == ["API Gateway", "Lambda"]
+    assert services == ["API Gateway (HTTP API)", "Lambda"]
     assert "App Runner" not in services
+
+
+def test_python_api_promotes_lambda_web_adapter():
+    """Audit follow-up: AWS now recommends Lambda Web Adapter (LWA) over
+    Mangum for FastAPI/Flask. Notes should lead with LWA; Mangum is the
+    fallback option, not the default."""
+    profile = RepoProfile(app_type="python_api")
+    arch = recommend(profile)
+    notes_text = " | ".join(arch.notes)
+    assert "Lambda Web Adapter" in notes_text or "LWA" in notes_text
+    # LWA should be mentioned before Mangum (the recommended path is first).
+    lwa_idx = max(notes_text.find("Lambda Web Adapter"), notes_text.find("LWA"))
+    mangum_idx = notes_text.find("Mangum")
+    if mangum_idx >= 0:
+        assert lwa_idx < mangum_idx, "LWA should appear before Mangum in notes"
 
 
 def test_dockerized_web_default_is_fargate():

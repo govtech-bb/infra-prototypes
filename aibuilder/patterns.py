@@ -51,6 +51,11 @@ _CATALOG: dict[str, Architecture] = {
                 sizing={"data_out_gb": 5, "requests_per_month": 100_000},
             ),
         ],
+        notes=[
+            "CloudFront reads from S3 via Origin Access Control (OAC); the "
+            "bucket stays private. OAC is the current AWS recommendation — "
+            "older Origin Access Identity (OAI) is in maintenance.",
+        ],
     ),
     "spa_with_api": Architecture(
         pattern="spa_with_api",
@@ -66,8 +71,12 @@ _CATALOG: dict[str, Architecture] = {
                 sizing={"data_out_gb": 5, "requests_per_month": 100_000},
             ),
             ArchitectureService(
-                aws_service="API Gateway",
-                purpose="Public HTTPS endpoint for your backend.",
+                aws_service="API Gateway (HTTP API)",
+                purpose=(
+                    "Public HTTPS endpoint for your backend. HTTP API "
+                    "specifically — it's ~70% cheaper than REST API and the "
+                    "right default for almost all prototype workloads."
+                ),
                 sizing={"requests_per_month": 100_000},
             ),
             ArchitectureService(
@@ -76,13 +85,27 @@ _CATALOG: dict[str, Architecture] = {
                 sizing={"requests_per_month": 100_000, "memory_mb": 256, "duration_ms": 200},
             ),
         ],
+        notes=[
+            "CloudFront reads from S3 via Origin Access Control (OAC); the bucket stays private.",
+            "For client-side routing (React Router, Vue Router, etc.), "
+            "configure CloudFront to rewrite 403 / 404 responses to "
+            "/index.html with HTTP 200 — otherwise refreshing a deep link "
+            "returns an error.",
+            "CloudFront proxies /api/* to API Gateway as a separate cache "
+            "behavior so the SPA and the API live under one origin (no CORS "
+            "to manage).",
+        ],
     ),
     "node_api": Architecture(
         pattern="node_api",
         services=[
             ArchitectureService(
-                aws_service="API Gateway",
-                purpose="Public HTTPS endpoint that routes to your Lambda functions.",
+                aws_service="API Gateway (HTTP API)",
+                purpose=(
+                    "Public HTTPS endpoint that routes to your Lambda functions. "
+                    "HTTP API specifically — ~70% cheaper than REST API and the "
+                    "right default for almost all prototype workloads."
+                ),
                 sizing={"requests_per_month": 100_000},
             ),
             ArchitectureService(
@@ -101,21 +124,29 @@ _CATALOG: dict[str, Architecture] = {
         pattern="python_api",
         services=[
             ArchitectureService(
-                aws_service="API Gateway",
-                purpose="Public HTTPS endpoint that routes to your Lambda functions.",
+                aws_service="API Gateway (HTTP API)",
+                purpose=(
+                    "Public HTTPS endpoint that routes to your Lambda functions. "
+                    "HTTP API specifically — ~70% cheaper than REST API and the "
+                    "right default for almost all prototype workloads."
+                ),
                 sizing={"requests_per_month": 100_000},
             ),
             ArchitectureService(
                 aws_service="Lambda",
-                purpose=(
-                    "Runs your Python API via Mangum (FastAPI / Flask adapter); scales to zero."
-                ),
+                purpose="Runs your Python API on demand; scales to zero.",
                 sizing={"requests_per_month": 100_000, "memory_mb": 256, "duration_ms": 200},
             ),
         ],
         notes=[
-            "Alternative: ECS Fargate if your framework has slow cold starts or "
-            "long-lived background work.",
+            "Recommended adapter: AWS Lambda Web Adapter (LWA) — zero-code-"
+            "change wrapper for FastAPI / Flask / Django. Same container runs "
+            "locally and on Lambda, so the code can move to Fargate later "
+            "without changes. Ship as a Lambda layer or container extension.",
+            "Mangum is the pure-Python alternative if you'd rather not add a "
+            "layer; both work, LWA is the current AWS-blessed path.",
+            "Alternative: ECS Fargate if your framework has slow cold starts "
+            "or long-lived background work.",
         ],
     ),
     "dockerized_web": Architecture(
@@ -131,8 +162,9 @@ _CATALOG: dict[str, Architecture] = {
             ),
         ],
         notes=[
-            "Alternative: ECS Express Mode if you want App-Runner-style simpler "
-            "config (App Runner itself is being deprecated by AWS).",
+            "Alternative: ECS Express Mode for App-Runner-style simpler config "
+            "— AWS now guides new container workloads to Express Mode or full "
+            "Fargate rather than App Runner.",
         ],
     ),
     "fullstack_with_db": Architecture(
@@ -152,8 +184,9 @@ _CATALOG: dict[str, Architecture] = {
         notes=[
             "Alternative: Aurora Serverless v2 (min 0.5 ACU) for the DB if you "
             "want it to auto-pause during idle periods.",
-            "Alternative: ECS Express Mode for simpler config than full Fargate "
-            "(App Runner is being deprecated by AWS).",
+            "Alternative: ECS Express Mode for simpler config than full "
+            "Fargate — AWS now guides new container workloads to Express Mode "
+            "or full Fargate rather than App Runner.",
         ],
     ),
     "nextjs_amplify_hosting": Architecture(
