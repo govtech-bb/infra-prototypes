@@ -49,6 +49,12 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
     # ECS Fargate runs 24/7 — no scale-to-zero. ~$0.04/vCPU-hr + ~$0.0044/GB-hr;
     # 0.25 vCPU / 0.5 GB / 730 hr/mo ≈ $9. Rounded to $9 to keep prototype-tier honest.
     "ECS Fargate": (9.00, "0.25 vCPU / 0.5 GB, runs 24/7 (Fargate doesn't pause idle tasks)"),
+    # Amplify Hosting: free tier covers most low-traffic prototypes
+    # (1000 build min/mo + 15 GB served + 5 GB stored). SSR compute meters
+    # separately at ~$0.30 per 1M requests + $0.20 per GB-hr. For 100k
+    # requests at 50ms / 512 MB, the SSR bill is ~$0.15-2/mo. $3 is a safe
+    # round number that won't surprise users when traffic ticks up.
+    "Amplify Hosting": (3.00, "~100k requests + ~5 GB served + SSR via managed Lambda@Edge"),
     "RDS PostgreSQL": (12.00, "db.t4g.micro, 20 GB gp3, Single-AZ"),
     "EventBridge Scheduler": (0.00, "<1k invocations/mo is in the free tier"),
 }
@@ -61,6 +67,10 @@ _PER_SERVICE_ASSUMPTIONS: dict[str, str] = {
     "CloudFront": "~5 GB CloudFront egress per month",
     "Lambda": "Lambda: 256 MB memory, 200 ms avg duration",
     "ECS Fargate": "ECS Fargate: 0.25 vCPU / 0.5 GB, runs 24/7 (no scale-to-zero)",
+    "Amplify Hosting": (
+        "Amplify Hosting: ~100k requests/mo, ~5 GB served, SSR via managed "
+        "Lambda@Edge (Amplify free tier covers most prototype traffic)"
+    ),
     "RDS PostgreSQL": "RDS: db.t4g.micro, 20 GB gp3, Single-AZ",
 }
 

@@ -84,3 +84,88 @@ def test_unknown_returns_empty_with_helpful_note():
     assert arch.pattern == "unknown"
     assert arch.services == []
     assert any("describe" in n.lower() for n in arch.notes)
+
+
+# ── Amplify Hosting routing for SSR-default frontend frameworks ──────────────
+# Amplify Hosting is AWS's Next.js/Nuxt/Remix-native managed host: it handles
+# SSR, API routes, middleware, and HTTPS/CDN out of the box, and lets the user
+# keep their managed backend (Supabase/Firebase/etc.) without forcing a DB
+# migration to RDS. We route the SSR-default frontends here UNLESS the repo
+# has a Dockerfile (a strong signal the user wants to BYO container).
+
+
+def test_next_no_dockerfile_routes_to_amplify_hosting():
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["next", "react"],
+        has_dockerfile=False,
+    )
+    arch = recommend(profile)
+    assert arch.pattern == "nextjs_amplify_hosting"
+    assert [s.aws_service for s in arch.services] == ["Amplify Hosting"]
+    notes_text = " | ".join(arch.notes)
+    assert "managed" in notes_text.lower() or "Supabase" in notes_text
+    assert "Fargate" in notes_text  # the migrate-DB-to-AWS alternative
+
+
+def test_next_with_db_hints_and_no_dockerfile_routes_to_amplify():
+    """Real-world scenario: govtech-bb/st-thomas-sign-in is Next.js +
+    Supabase + no Dockerfile. The db_hint upgrade would normally route to
+    fullstack_with_db (Fargate + RDS) — but the user is keeping Supabase,
+    not migrating, so Amplify Hosting is the right answer."""
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["next", "react"],
+        has_dockerfile=False,
+        has_database_hints=True,
+    )
+    arch = recommend(profile)
+    assert arch.pattern == "nextjs_amplify_hosting"
+
+
+def test_next_with_dockerfile_stays_on_fargate():
+    """A Dockerfile is a strong signal the user wants to BYO container —
+    don't override that with the managed-hosting recommendation."""
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["next", "react"],
+        has_dockerfile=True,
+        has_database_hints=True,
+    )
+    arch = recommend(profile)
+    assert arch.pattern == "fullstack_with_db"
+    assert "ECS Fargate" in [s.aws_service for s in arch.services]
+
+
+def test_nuxt_no_dockerfile_routes_to_amplify():
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["nuxt", "vue"],
+        has_dockerfile=False,
+    )
+    arch = recommend(profile)
+    assert arch.pattern == "nextjs_amplify_hosting"
+
+
+def test_remix_no_dockerfile_routes_to_amplify():
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["react", "remix"],
+        has_dockerfile=False,
+    )
+    arch = recommend(profile)
+    assert arch.pattern == "nextjs_amplify_hosting"
+
+
+def test_express_only_does_not_route_to_amplify():
+    """Pattern stays as the existing spa_with_api when no SSR-default
+    frontend framework is detected — Amplify Hosting is only the right
+    answer for next/nuxt/remix."""
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["react", "express"],
+        has_dockerfile=False,
+    )
+    arch = recommend(profile)
+    assert arch.pattern == "spa_with_api"
+    assert "Amplify Hosting" not in [s.aws_service for s in arch.services]

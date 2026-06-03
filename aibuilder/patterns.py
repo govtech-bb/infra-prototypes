@@ -156,6 +156,32 @@ _CATALOG: dict[str, Architecture] = {
             "(App Runner is being deprecated by AWS).",
         ],
     ),
+    "nextjs_amplify_hosting": Architecture(
+        pattern="nextjs_amplify_hosting",
+        services=[
+            ArchitectureService(
+                aws_service="Amplify Hosting",
+                purpose=(
+                    "AWS-native managed host for Next.js / Nuxt / Remix. Handles "
+                    "SSR, API routes, middleware, HTTPS, and the CDN out of the "
+                    "box. Scales to near-zero between requests."
+                ),
+                sizing={
+                    "requests_per_month": 100_000,
+                    "data_out_gb": 5,
+                    "ssr_memory_mb": 512,
+                },
+            ),
+        ],
+        notes=[
+            "Assumes your database / backend lives outside AWS (e.g. Supabase, "
+            "Firebase, PlanetScale, Neon) — Amplify Hosting just runs your app. "
+            "If you'd rather move the database into AWS, ask me about ECS "
+            "Fargate + RDS PostgreSQL instead.",
+            "Alternative: ECS Fargate if you need a Docker container, custom "
+            "networking, or sidecars.",
+        ],
+    ),
     "worker": Architecture(
         pattern="worker",
         services=[
@@ -175,11 +201,22 @@ _CATALOG: dict[str, Architecture] = {
 }
 
 
+_SSR_DEFAULT_FRONTEND_FRAMEWORKS = {"next", "nuxt", "remix"}
+
+
 def recommend(profile: RepoProfile) -> Architecture:
     """Map a RepoProfile to an Architecture.
 
-    Special case: if profile is `spa_with_api` but has database hints,
-    upgrade to `fullstack_with_db` (the spec calls this out explicitly).
+    Routing rules (in order):
+    1. `unknown` → empty architecture with a "tell me about the app" note.
+    2. `spa_with_api` + `has_database_hints` → upgrade to `fullstack_with_db`.
+    3. SSR-default frontend (Next.js / Nuxt / Remix) with no Dockerfile →
+       route to `nextjs_amplify_hosting`. Amplify Hosting handles SSR + API
+       routes natively, scales to near-zero, and lets the user keep their
+       managed backend (Supabase / Firebase / etc.) instead of forcing a DB
+       migration. A Dockerfile is the escape hatch: if the user committed
+       one they likely want containers (Fargate), not a managed host.
+    4. Otherwise → dict lookup against `_CATALOG`.
     """
     if profile.app_type == "unknown":
         return Architecture(
@@ -194,5 +231,12 @@ def recommend(profile: RepoProfile) -> Architecture:
     pattern_key = profile.app_type
     if pattern_key == "spa_with_api" and profile.has_database_hints:
         pattern_key = "fullstack_with_db"
+
+    if (
+        pattern_key in ("spa_with_api", "fullstack_with_db")
+        and (set(profile.frameworks) & _SSR_DEFAULT_FRONTEND_FRAMEWORKS)
+        and not profile.has_dockerfile
+    ):
+        pattern_key = "nextjs_amplify_hosting"
 
     return _CATALOG[pattern_key]
