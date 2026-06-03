@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository purpose
 
-Three-part prototype ecosystem:
+Three sibling prototypes:
 
 - `infra/` — OpenTofu (Terraform-compatible) stack that provisions an S3 + CloudFront static-site setup. Usable standalone via `make`.
-- `deploy-agent/` — FastAPI app that exposes a chat UI; Claude (`claude-opus-4-6`) is given four tools (`deploy_infrastructure`, `upload_files`, `list_deployments`, `destroy_infrastructure`) that shell out to `tofu` and `boto3` to drive the `infra/` stack.
-- `aibuilder/` — FastAPI app that takes a public GitHub repository URL, analyzes it to classify the application type (static site, Node.js, Python, etc.), recommends an AWS architecture from a curated pattern catalog, and returns a monthly cost estimate. Runs Claude with two tools (`analyze_repository`, `recommend_architecture`) to guide users toward production-ready AWS setups.
+- `deploy-agent/` — FastAPI chat UI; Claude (`claude-opus-4-6`) is given four tools (`deploy_infrastructure`, `upload_files`, `list_deployments`, `destroy_infrastructure`) that shell out to `tofu` and `boto3` to drive the `infra/` stack.
+- `aibuilder/` — FastAPI chat UI; Claude is given four tools (`clone_repo`, `analyze_repo`, `recommend_architecture`, `estimate_cost`) that take a public GitHub URL, classify the app, recommend an AWS architecture from a curated catalog, and return a monthly cost estimate. v1 ships fallback-only pricing (live Pricing API is a follow-up). No deploys — analysis and estimate only.
 
-All three pieces are siblings, not nested. `deploy-agent/tools.py` resolves `INFRA_DIR` as `../infra`; `aibuilder/tools.py` resolves `INFRA_DIR` similarly for reference.
+All three pieces are siblings, not nested. `deploy-agent/tools.py` resolves `INFRA_DIR` as `../infra` relative to itself. `aibuilder/` has no `infra/` coupling — its tools clone external GitHub repos into `aibuilder/tmp/repos/<session_id>/`.
 
 Public repo: <https://github.com/christophercorbin/infra-prototypes>. CI runs ruff + pytest + tofu validate on every push/PR.
 
@@ -153,7 +153,7 @@ The agent's system prompt (`agent.py:SYSTEM_PROMPT`) defines four flows:
 
 ## aibuilder
 
-Chat-first AWS architecture recommendation engine. Takes a public GitHub URL, analyzes the codebase to classify the application, recommends an optimal AWS architecture from a curated catalog, and returns a monthly cost estimate.
+Sibling app to `deploy-agent/`. Chat bot that takes a public GitHub URL, classifies the app, recommends an AWS architecture from a curated catalog, and returns a monthly cost estimate. v1 ships with a fallback-table cost estimator — live AWS Pricing API integration is the first follow-up.
 
 ### Commands
 
@@ -170,40 +170,49 @@ cp .env.example .env             # then edit .env with ANTHROPIC_API_KEY
 ```bash
 make install        # production deps
 make install-dev    # adds pytest, ruff
-make check          # ruff + pytest
+make check          # ruff check + ruff format --check + pytest
 make test           # just pytest
 make format         # ruff check --fix && ruff format
 ```
 
 ### Architecture
 
-Modular agent with five support libraries:
+Same shape as deploy-agent (FastAPI + Claude tool-use loop + SQLite sessions + single-file static chat UI), with a different toolset and no upload path.
 
-- **`app.py`** — FastAPI chat endpoint (`/api/chat/{session_id}`), file upload path, and session management hooks.
-- **`agent.py`** — Hand-rolled tool-use loop (`run_agent_loop`, `MAX_AGENT_ITERATIONS = 15`, overridable in tests) that consumes cumulative `session.messages`, calls Claude (`claude-opus-4-6`), and dispatches tool calls via `tools.execute_tool`.
-- **`analyzer.py`** — Repository analysis: clones git repos locally, detects language/framework via file signatures, counts lines of code, identifies data stores (databases, message queues, external APIs).
-- **`patterns.py`** — Curated AWS architecture catalog. Each pattern is a `Pattern` named tuple with `name`, `summary`, `services`, `monthly_estimate_usd`. Patterns keyed by app type (e.g., "static-site", "nodejs-web", "python-async-jobs"). Pattern selection is deterministic — no LLM hallucination of services.
-- **`pricing.py`** — Cost calculation. Returns `{monthly_estimate_usd, currency, is_fallback: true}`. Phase 1.5 will replace the hand-curated fallback table with live AWS Pricing API calls; today all estimates have `is_fallback: true`.
-- **`tools.py`** — Two tools (`analyze_repository`, `recommend_architecture`), both synchronous. `analyze_repository` takes a GitHub URL, clones it, inspects file structure, and returns metadata (app_type, language, framework, estimated_lines_of_code, detected_services). `recommend_architecture` takes the analysis metadata and returns a recommended pattern plus cost estimate.
-- **`sessions.py`** — SQLite-backed session store (`SqliteSessionStore`). Persists `session.messages` for multi-turn context. Pinned at `aibuilder/data/sessions.db` (override with `AIBUILDER_DB` env var for tests).
+- **`app.py`** — Routes: `GET /api/session`, `POST /api/chat`, `GET /api/health`. The chat handler appends the user message, runs `agent.run_agent_loop`, saves the session, and returns `{message, last_profile}`. `static/` is mounted at `/`.
+- **`agent.py`** — Hand-rolled tool-use loop (`run_agent_loop`, `MAX_AGENT_ITERATIONS = 15`). `SYSTEM_PROMPT` encodes the 4-stage workflow: ingest → validate → recommend → estimate. The prompt explicitly forbids inventing AWS services or dollar amounts.
+- **`analyzer.py`** — Pure-Python `analyze_repo(path) → RepoProfile`. Walks the cloned tree, parses `package.json` / `requirements.txt` / `pyproject.toml` / `Dockerfile` / `.env*`, and classifies into one of 7 app types: `static_site`, `spa_with_api`, `node_api`, `python_api`, `dockerized_web`, `fullstack_with_db`, `worker`. Also builds a human-readable summary string the agent surfaces verbatim during the validation step.
+- **`patterns.py`** — `recommend(profile) → Architecture` does a dict lookup against `_CATALOG` (the deterministic brain). Each `Architecture` has a list of `ArchitectureService` dataclasses with `aws_service`, `purpose`, `sizing`. Special case: `spa_with_api + has_database_hints` upgrades to `fullstack_with_db`.
+- **`pricing.py`** — `estimate(architecture) → CostEstimate` looks each service up in `_FALLBACK_PRICES` (curated table) and sums. `CostEstimate` has `lines`, `total_monthly_usd`, `assumptions`, `is_fallback`. `is_fallback` is always `True` in v1.
+- **`tools.py`** — Four tools registered in `TOOL_DEFINITIONS` and dispatched by `execute_tool(name, args, *, session_id, session)`:
+  - `clone_repo(github_url)` — validates URL via `_GITHUB_URL_RE`, shallow-clones to `aibuilder/tmp/repos/<session_id>/<repo>/`, enforces size + file-count guards. Rejects path-traversal segments (`.`, `..`) and double-checks `target.resolve().relative_to(session_root)` before any `rmtree`.
+  - `analyze_repo(path)` — thin wrapper around `analyzer.analyze_repo`, returns a JSON-shaped `RepoProfile.to_dict()`.
+  - `recommend_architecture(profile: dict)` — reconstructs the dataclass from the dict, calls `patterns.recommend`, returns `.to_dict()`.
+  - `estimate_cost(architecture: dict)` — same pattern with pricing.
+- **`sessions.py`** — SQLite session store. `Session` has 4 fields: `session_id`, `messages`, `clone_path`, `last_profile`. DB at `aibuilder/data/sessions.db` (override with `AIBUILDER_DB` env var). No schema migrations in v1.
+- **`static/index.html`** — Single-file chat UI adapted from deploy-agent: single-column layout, no dropzone, no file upload. Reuses the markdown renderer, Bajan typing messages, and GovTech palette.
 
 ### Things that will bite you
 
-- **Port 8001** — aibuilder runs on `:8001` (deploy-agent uses `:8000`). When running both locally, mind the port collision.
-- **Repository cloning** — git clones are cached under `aibuilder/tmp/repos/{session_id}/`. This directory is gitignored but grows unbounded across sessions. Cleanup is manual (no automatic prune yet).
-- **File and size guards** — `AIBUILDER_MAX_FILES` defaults to 5000 and `AIBUILDER_MAX_SIZE_MB` to 500. Repos exceeding either limit are rejected early (`clone_repository` returns an error dict, not a raised exception).
-- **Pattern catalog is the source of truth** — The system prompt forbids the agent from inventing AWS services or making up cost figures. All recommendations and estimates come from `patterns.py`. If a service isn't in the catalog, the agent can't recommend it, and pricing is always fallback (static table).
-- **Cost estimates are fallback (v1)** — All estimates have `is_fallback: true`. No live Pricing API calls yet. The hand-curated table in `pricing.py` is the Phase 1 baseline; Phase 1.5 will migrate to dynamic pricing via AWS's Price List API.
-- **Sessions persisted in SQLite** — Like deploy-agent, aibuilder uses `ALTER TABLE ADD COLUMN` for schema migrations (wrapped in `try/except sqlite3.OperationalError`). If you add another column later, follow the same defensive pattern.
+- **Port 8001** — aibuilder runs on `:8001`; deploy-agent on `:8000`. Both can run in parallel.
+- **Repo clones grow unbounded** — `clone_repo` shells out to `git clone --depth=1`. The dir at `aibuilder/tmp/repos/` is gitignored but never auto-pruned in v1.
+- **Repo guards** — `AIBUILDER_MAX_FILES` (default 5000), `AIBUILDER_MAX_SIZE_MB` (default 500), `AIBUILDER_TMP_DIR` (default `aibuilder/tmp/repos`). Read at call-time so tests can monkeypatch.
+- **Path-traversal hardening** — The URL regex's `[\w.-]+` allows `.` and `..` as owner/repo segments. `clone_repo` explicitly rejects those and verifies the resolved target sits inside the session dir. If you swap the regex, keep both checks.
+- **The pattern catalog is the brain, not the LLM** — `_CATALOG` in `patterns.py` is the source of truth. `SYSTEM_PROMPT` says "NEVER invent AWS services that `recommend_architecture` did not return. NEVER invent dollar amounts that `estimate_cost` did not return." Don't loosen those rules without a plan.
+- **`is_fallback: true` always (v1)** — Cost estimates come from `_FALLBACK_PRICES`. Phase 1.5 will add live AWS Pricing API lookups; the `CostEstimate.is_fallback` field is reserved so that change is purely additive.
+- **No file uploads** — Unlike deploy-agent, aibuilder has no `/api/upload/` endpoint and no dropzone in the UI. Only chat input.
+- **Test fixtures live at `aibuilder/tests/fixtures/`** — Sample repos (`static_site/`, `node_api/`, `python_api/`, `dockerized_web/`, `spa_with_api/`, `fullstack_with_db/`, `worker/`) the analyzer parses during tests. Ruff is configured to exclude this directory; don't auto-format the fixtures.
 
 ## Design / plan archive
 
 All design docs and implementation plans live under `docs/superpowers/`:
 
-- **Specs:** `docs/superpowers/specs/2026-05-05-*-design.md`
-- **Plans:** `docs/superpowers/plans/2026-05-05-*.md`
+- **Specs:** `docs/superpowers/specs/`
+- **Plans:** `docs/superpowers/plans/`
 
-Plans shipped to date (in order): the original hardening pass (Plan A), upload-preflight + destroy workflow (Plan B), update flow + duplicate-download preflight + file re-injection (Plan C), empty-bucket-before-destroy (Plan D), GovTech UI restyle (Plan E), markdown renderer + capability greeting (Plan F), Bajan loading messages (Plan G).
+Plans shipped for **deploy-agent** (in order): the original hardening pass (Plan A), upload-preflight + destroy workflow (Plan B), update flow + duplicate-download preflight + file re-injection (Plan C), empty-bucket-before-destroy (Plan D), GovTech UI restyle (Plan E), markdown renderer + capability greeting (Plan F), Bajan loading messages (Plan G).
+
+Plans shipped for **aibuilder**: Phase 1 — repo analysis + AWS cost estimate (`docs/superpowers/plans/2026-06-02-aibuilder-phase1.md`, spec at `docs/superpowers/specs/2026-06-02-aibuilder-design.md`).
 
 **Open / pending:**
 
@@ -212,4 +221,7 @@ Plans shipped to date (in order): the original hardening pass (Plan A), upload-p
 
 ## Test count baseline
 
-`make check` should report **67 tests passing** as of the last commit on `main`. New work should grow the count, not shrink it.
+- `cd deploy-agent && make check` → **67 tests passing**.
+- `cd aibuilder && make check` → **45 tests passing**.
+
+New work should grow these counts, not shrink them.
