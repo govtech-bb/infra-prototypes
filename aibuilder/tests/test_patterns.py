@@ -20,21 +20,48 @@ def test_spa_with_api_pattern():
     assert [s.aws_service for s in arch.services] == ["S3", "CloudFront", "API Gateway", "Lambda"]
 
 
-def test_node_api_default_is_app_runner():
+def test_node_api_default_is_lambda():
+    """App Runner is being deprecated by AWS — our default for API-shaped
+    workloads is now Lambda + API Gateway (true scale-to-zero, cheaper at
+    prototype traffic). ECS Fargate is the alternative for long-lived /
+    WebSocket use cases."""
     profile = RepoProfile(app_type="node_api")
     arch = recommend(profile)
     assert arch.pattern == "node_api"
-    assert arch.services[0].aws_service == "App Runner"
-    assert any("Lambda" in note for note in arch.notes)
+    services = [s.aws_service for s in arch.services]
+    assert services == ["API Gateway", "Lambda"]
+    # The catalog must never recommend App Runner.
+    assert "App Runner" not in services
+    assert not any("App Runner" in n for n in arch.notes)
+    assert any("Fargate" in note for note in arch.notes)
 
 
-def test_fullstack_with_db_includes_rds():
+def test_python_api_default_is_lambda():
+    profile = RepoProfile(app_type="python_api")
+    arch = recommend(profile)
+    services = [s.aws_service for s in arch.services]
+    assert services == ["API Gateway", "Lambda"]
+    assert "App Runner" not in services
+
+
+def test_dockerized_web_default_is_fargate():
+    profile = RepoProfile(app_type="dockerized_web")
+    arch = recommend(profile)
+    services = [s.aws_service for s in arch.services]
+    assert services == ["ECS Fargate"]
+    assert "App Runner" not in services
+    # Notes should still mention the simpler-config alternative.
+    assert any("ECS Express" in n for n in arch.notes)
+
+
+def test_fullstack_with_db_includes_rds_and_fargate():
     profile = RepoProfile(app_type="fullstack_with_db")
     arch = recommend(profile)
     assert arch.pattern == "fullstack_with_db"
     services = [s.aws_service for s in arch.services]
-    assert "App Runner" in services
+    assert "ECS Fargate" in services
     assert "RDS PostgreSQL" in services
+    assert "App Runner" not in services
 
 
 def test_spa_with_api_upgrades_to_fullstack_when_db_hints():

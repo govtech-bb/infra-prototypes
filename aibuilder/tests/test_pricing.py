@@ -67,7 +67,7 @@ def test_assumptions_match_chosen_services():
     assert "us-east-1" in text
     assert "rough" in text.lower()
     # Services that ARE in the architecture get their assumptions.
-    assert "App Runner" in text
+    assert "Fargate" in text
     assert "RDS" in text
     # Services that are NOT in the architecture must NOT contribute assumptions.
     assert "CloudFront" not in text, (
@@ -76,11 +76,13 @@ def test_assumptions_match_chosen_services():
     assert "Lambda" not in text, (
         "fullstack_with_db has no Lambda — its assumption shouldn't leak through"
     )
+    # App Runner is deprecated and removed from every pattern.
+    assert "App Runner" not in text
 
     static = estimate(recommend(RepoProfile(app_type="static_site")))
     static_text = " | ".join(static.assumptions)
     assert "CloudFront" in static_text  # is in static_site arch
-    assert "App Runner" not in static_text
+    assert "Fargate" not in static_text
     assert "RDS" not in static_text
     assert "Lambda" not in static_text
 
@@ -88,5 +90,5 @@ def test_assumptions_match_chosen_services():
     spa_text = " | ".join(spa.assumptions)
     assert "CloudFront" in spa_text
     assert "Lambda" in spa_text
-    assert "App Runner" not in spa_text
+    assert "Fargate" not in spa_text
     assert "RDS" not in spa_text

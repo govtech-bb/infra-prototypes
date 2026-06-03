@@ -46,7 +46,9 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
     "CloudFront": (0.50, "~5 GB data out + ~100k requests (free tier covers most prototypes)"),
     "API Gateway": (0.35, "~100k HTTP API requests"),
     "Lambda": (0.10, "~100k invocations at 256 MB / 200 ms"),
-    "App Runner": (5.00, "0.25 vCPU / 0.5 GB, scales to zero when idle"),
+    # ECS Fargate runs 24/7 — no scale-to-zero. ~$0.04/vCPU-hr + ~$0.0044/GB-hr;
+    # 0.25 vCPU / 0.5 GB / 730 hr/mo ≈ $9. Rounded to $9 to keep prototype-tier honest.
+    "ECS Fargate": (9.00, "0.25 vCPU / 0.5 GB, runs 24/7 (Fargate doesn't pause idle tasks)"),
     "RDS PostgreSQL": (12.00, "db.t4g.micro, 20 GB gp3, Single-AZ"),
     "EventBridge Scheduler": (0.00, "<1k invocations/mo is in the free tier"),
 }
@@ -58,7 +60,7 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
 _PER_SERVICE_ASSUMPTIONS: dict[str, str] = {
     "CloudFront": "~5 GB CloudFront egress per month",
     "Lambda": "Lambda: 256 MB memory, 200 ms avg duration",
-    "App Runner": "App Runner: 0.25 vCPU / 0.5 GB, scales to zero after idle",
+    "ECS Fargate": "ECS Fargate: 0.25 vCPU / 0.5 GB, runs 24/7 (no scale-to-zero)",
     "RDS PostgreSQL": "RDS: db.t4g.micro, 20 GB gp3, Single-AZ",
 }
 

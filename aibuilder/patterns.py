@@ -81,42 +81,67 @@ _CATALOG: dict[str, Architecture] = {
         pattern="node_api",
         services=[
             ArchitectureService(
-                aws_service="App Runner",
-                purpose="Auto-scaling container hosting for your Node.js API.",
-                sizing={"vcpu": 0.25, "memory_gb": 0.5, "requests_per_month": 100_000},
+                aws_service="API Gateway",
+                purpose="Public HTTPS endpoint that routes to your Lambda functions.",
+                sizing={"requests_per_month": 100_000},
+            ),
+            ArchitectureService(
+                aws_service="Lambda",
+                purpose="Runs your Node.js API on demand; truly scales to zero.",
+                sizing={"requests_per_month": 100_000, "memory_mb": 256, "duration_ms": 200},
             ),
         ],
-        notes=["Alternative: Lambda + API Gateway if the API is stateless and traffic is spiky."],
+        notes=[
+            "Alternative: ECS Fargate if you have long-lived connections, "
+            "WebSockets, or you need to run a process that doesn't fit Lambda's "
+            "15-minute / 10 GB envelope.",
+        ],
     ),
     "python_api": Architecture(
         pattern="python_api",
         services=[
             ArchitectureService(
-                aws_service="App Runner",
-                purpose="Auto-scaling container hosting for your Python API.",
-                sizing={"vcpu": 0.25, "memory_gb": 0.5, "requests_per_month": 100_000},
+                aws_service="API Gateway",
+                purpose="Public HTTPS endpoint that routes to your Lambda functions.",
+                sizing={"requests_per_month": 100_000},
+            ),
+            ArchitectureService(
+                aws_service="Lambda",
+                purpose=(
+                    "Runs your Python API via Mangum (FastAPI / Flask adapter); scales to zero."
+                ),
+                sizing={"requests_per_month": 100_000, "memory_mb": 256, "duration_ms": 200},
             ),
         ],
-        notes=["Alternative: Lambda + API Gateway via Mangum if the API is stateless."],
+        notes=[
+            "Alternative: ECS Fargate if your framework has slow cold starts or "
+            "long-lived background work.",
+        ],
     ),
     "dockerized_web": Architecture(
         pattern="dockerized_web",
         services=[
             ArchitectureService(
-                aws_service="App Runner",
-                purpose="Runs your container, auto-scales, no cluster management.",
+                aws_service="ECS Fargate",
+                purpose=(
+                    "Runs your container as a managed service — no cluster "
+                    "management, no EC2 hosts to patch."
+                ),
                 sizing={"vcpu": 0.25, "memory_gb": 0.5, "requests_per_month": 100_000},
             ),
         ],
-        notes=["Alternative: ECS Fargate if you need more networking control or sidecars."],
+        notes=[
+            "Alternative: ECS Express Mode if you want App-Runner-style simpler "
+            "config (App Runner itself is being deprecated by AWS).",
+        ],
     ),
     "fullstack_with_db": Architecture(
         pattern="fullstack_with_db",
         services=[
             ArchitectureService(
-                aws_service="App Runner",
-                purpose="Hosts your web app container.",
-                sizing={"vcpu": 0.5, "memory_gb": 1.0, "requests_per_month": 100_000},
+                aws_service="ECS Fargate",
+                purpose="Hosts your web app container behind an Application Load Balancer.",
+                sizing={"vcpu": 0.25, "memory_gb": 0.5, "requests_per_month": 100_000},
             ),
             ArchitectureService(
                 aws_service="RDS PostgreSQL",
@@ -124,7 +149,12 @@ _CATALOG: dict[str, Architecture] = {
                 sizing={"instance_class": "db.t4g.micro", "storage_gb": 20},
             ),
         ],
-        notes=["Alternative: Aurora Serverless v2 (min 0.5 ACU) if you want auto-pause."],
+        notes=[
+            "Alternative: Aurora Serverless v2 (min 0.5 ACU) for the DB if you "
+            "want it to auto-pause during idle periods.",
+            "Alternative: ECS Express Mode for simpler config than full Fargate "
+            "(App Runner is being deprecated by AWS).",
+        ],
     ),
     "worker": Architecture(
         pattern="worker",
