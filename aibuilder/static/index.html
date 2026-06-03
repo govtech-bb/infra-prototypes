@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GovTech Barbados — aibuilder</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* GovTech Barbados palette */
+      --gt-purple:    #3A3380;
+      --gt-purple-d:  #2B2660;
+      --gt-purple-l:  #4F47A6;
+      --gt-cyan:      #1CD4D8;
+      --gt-cyan-d:    #14A6A9;
+
+      --bg:           #F4F5F8;
+      --surface:      #FFFFFF;
+      --border:       #E2E5EC;
+      --border-strong:#C7CCD8;
+
+      --text:         #1B1F2A;
+      --text-2:       #4A5160;
+      --text-dim:     #6B7384;
+
+      --success:      #16A34A;
+      --warn:         #F59E0B;
+
+      --radius:       8px;
+      --radius-lg:    12px;
+      --shadow-sm:    0 1px 2px rgba(27, 31, 42, 0.04);
+      --shadow-card:  0 1px 3px rgba(27, 31, 42, 0.06), 0 1px 2px rgba(27, 31, 42, 0.04);
+    }
+
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top bar (deep purple) ───────────────────────────────────────────────── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 24px;
+      background: var(--gt-purple);
+      color: #fff;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .topbar .badge {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .topbar .badge img { width: 18px; height: 18px; object-fit: contain; }
+    .topbar .name { font-weight: 600; letter-spacing: 0.1px; }
+    .topbar .name .accent { color: var(--gt-cyan); }
+
+    /* ── Alpha strip ─────────────────────────────────────────────────────────── */
+    .alphastrip {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-2);
+      flex-shrink: 0;
+    }
+    .alphastrip .tag {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: #fff;
+      background: var(--gt-purple);
+      padding: 3px 8px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .alphastrip a { color: var(--gt-purple); font-weight: 600; }
+    .alphastrip a:hover { color: var(--gt-cyan-d); }
+
+    /* ── Hero ────────────────────────────────────────────────────────────────── */
+    .hero {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 18px 24px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .hero-mark {
+      width: 56px; height: 56px;
+      border-radius: 12px;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .hero-mark img { width: 44px; height: 44px; object-fit: contain; }
+    .hero-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .hero-eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--gt-cyan-d);
+    }
+    .hero h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      color: var(--text);
+    }
+    .hero p {
+      font-size: 13px;
+      color: var(--text-2);
+      max-width: 720px;
+    }
+
+    /* ── Single-column layout ────────────────────────────────────────────────── */
+    .layout {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      padding: 18px 24px 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-card);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .card-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .card-header .label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .card-header .accent-bar {
+      width: 4px;
+      height: 16px;
+      background: var(--gt-cyan);
+      border-radius: 2px;
+    }
+
+    /* ── Chat (full width) ───────────────────────────────────────────────────── */
+    .chat-card { flex: 1; min-width: 0; }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+      min-height: 0;
+    }
+    .messages::-webkit-scrollbar { width: 6px; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+
+    .msg {
+      display: flex;
+      gap: 12px;
+      max-width: 760px;
+      animation: fadeUp 0.18s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+
+    .avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700;
+    }
+    .msg.agent .avatar { background: var(--gt-purple); color: #fff; }
+    .msg.user  .avatar { background: var(--gt-cyan); color: var(--gt-purple-d); }
+
+    .bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--gt-cyan);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 14px;
+      line-height: 1.55;
+      word-break: break-word;
+      box-shadow: var(--shadow-sm);
+      color: var(--text);
+    }
+    .msg.user .bubble {
+      background: var(--gt-purple);
+      border-color: var(--gt-purple-d);
+      border-left-color: var(--gt-cyan);
+      color: #fff;
+      white-space: pre-wrap;  /* user messages are plain text */
+    }
+
+    /* ── Rendered markdown inside agent bubbles ─────────────────────────────── */
+    .bubble p { margin: 0 0 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble h1, .bubble h2, .bubble h3, .bubble h4 {
+      margin: 4px 0 6px; font-weight: 700; color: var(--text);
+    }
+    .bubble h1 { font-size: 17px; }
+    .bubble h2 { font-size: 15.5px; }
+    .bubble h3 { font-size: 14.5px; }
+    .bubble h4 { font-size: 13.5px; }
+    .bubble ul, .bubble ol { margin: 4px 0 8px 20px; padding: 0; }
+    .bubble li { margin: 2px 0; }
+    .bubble a {
+      color: var(--gt-purple);
+      font-weight: 600;
+      text-decoration: underline;
+      text-decoration-color: var(--gt-cyan);
+      text-underline-offset: 2px;
+    }
+    .bubble a:hover { color: var(--gt-cyan-d); }
+    .bubble strong { color: var(--text); font-weight: 700; }
+    .bubble em { font-style: italic; }
+    .bubble code {
+      background: rgba(58, 51, 128, 0.08);
+      color: var(--gt-purple-d);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .bubble pre {
+      background: #0F1320;
+      color: #E2E5EC;
+      padding: 10px 14px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 6px 0 10px;
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+    .bubble pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      font-size: inherit;
+    }
+    .bubble table {
+      border-collapse: collapse;
+      margin: 6px 0 10px;
+      font-size: 13px;
+      max-width: 100%;
+      display: block;
+      overflow-x: auto;
+    }
+    .bubble th, .bubble td {
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .bubble th {
+      background: rgba(58, 51, 128, 0.05);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .bubble tr:nth-child(even) td { background: #FAFBFD; }
+    /* Tables in user bubbles (rare but possible): white-on-purple */
+    .msg.user .bubble th { background: rgba(255,255,255,0.1); color: #fff; }
+    .msg.user .bubble td { color: #fff; }
+    .msg.user .bubble tr:nth-child(even) td { background: rgba(255,255,255,0.04); }
+    .msg.user .bubble a { color: var(--gt-cyan); text-decoration-color: rgba(255,255,255,0.5); }
+    .msg.user .bubble code { background: rgba(255,255,255,0.15); color: #fff; }
+
+    /* ── Typing indicator ────────────────────────────────────────────────────── */
+    .typing {
+      display: flex; gap: 10px; align-items: center;
+      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--gt-cyan);
+      border-radius: var(--radius);
+      width: fit-content;
+      box-shadow: var(--shadow-sm);
+    }
+    .typing-msg {
+      font-size: 13px;
+      color: var(--text-2);
+      font-style: italic;
+      animation: msgFade 0.35s ease;
+    }
+    @keyframes msgFade {
+      from { opacity: 0.2; transform: translateY(2px); }
+      to   { opacity: 1;   transform: translateY(0); }
+    }
+    .typing-dots { display: flex; gap: 5px; align-items: center; }
+    .dot {
+      width: 7px; height: 7px;
+      background: var(--gt-purple-l);
+      border-radius: 50%;
+      animation: bounce 1.2s infinite;
+    }
+    .typing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.6; }
+      40%           { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /* ── Input bar ───────────────────────────────────────────────────────────── */
+    .input-bar {
+      padding: 14px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    textarea {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 10px 14px;
+      resize: none;
+      max-height: 140px;
+      overflow-y: auto;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    textarea:focus {
+      border-color: var(--gt-cyan);
+      background: var(--surface);
+      box-shadow: 0 0 0 3px rgba(28, 212, 216, 0.18);
+    }
+    textarea::placeholder { color: var(--text-dim); }
+
+    button.send {
+      background: var(--gt-purple);
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 10px 18px;
+      height: 42px;
+      flex-shrink: 0;
+      transition: background 0.15s, transform 0.05s;
+      letter-spacing: 0.3px;
+    }
+    button.send:hover:not(:disabled) { background: var(--gt-purple-d); }
+    button.send:active:not(:disabled) { transform: translateY(1px); }
+    button.send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Mobile ──────────────────────────────────────────────────────────────── */
+    @media (max-width: 720px) {
+      .topbar { padding: 8px 14px; }
+      .alphastrip { padding: 6px 14px; font-size: 12px; }
+      .hero { padding: 14px 14px 12px; gap: 12px; }
+      .hero h1 { font-size: 18px; }
+      .layout { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <span class="badge"><img src="/govtech-barbados.png" alt="GovTech Barbados" /></span>
+  <span class="name">GovTech <span class="accent">Barbados</span></span>
+  <span style="margin-left:auto;opacity:.75;font-size:12px;">An internal tool</span>
+</div>
+
+<!-- Alpha strip -->
+<div class="alphastrip">
+  <span class="tag">Alpha</span>
+  <span>This is a new tool — <a href="#" onclick="return false;">share feedback</a> to help improve it.</span>
+</div>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-mark"><img src="/govtech-barbados.png" alt="GovTech Barbados" /></div>
+  <div class="hero-text">
+    <div class="hero-eyebrow">aibuilder · alpha</div>
+    <h1>Drop a repo, get an AWS plan.</h1>
+    <p>Paste a public GitHub URL. I'll tell you what AWS services you need and what they'd cost per month.</p>
+  </div>
+</div>
+
+<!-- Workspace -->
+<div class="layout">
+
+  <!-- Chat -->
+  <div class="card chat-card">
+    <div class="card-header">
+      <span class="accent-bar"></span>
+      <span class="label">AWS Advisor</span>
+    </div>
+
+    <div class="messages" id="messages"></div>
+
+    <div class="input-bar">
+      <textarea
+        id="input"
+        rows="1"
+        placeholder="Paste a GitHub URL or ask a question…"
+        autocomplete="off"
+      ></textarea>
+      <button class="send" id="sendBtn">Send</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let sessionId = null;
+  let isLoading = false;
+
+  const messagesEl = document.getElementById('messages');
+  const inputEl    = document.getElementById('input');
+  const sendBtn    = document.getElementById('sendBtn');
+
+  // ── Session init ───────────────────────────────────────────────────────────
+  async function init() {
+    const res  = await fetch('/api/session');
+    const data = await res.json();
+    sessionId  = data.session_id;
+
+    appendMessage('agent', [
+      "Hi! I'm the GovTech Barbados AWS Advisor. Here's what I can do for you:",
+      "",
+      "- **Paste a public GitHub URL.**",
+      "- **I'll figure out what kind of app it is** and confirm with you.",
+      "- **Then I'll recommend the AWS services** and estimate the monthly cost.",
+    ].join('\n'));
+  }
+
+  // ── Chat ───────────────────────────────────────────────────────────────────
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  inputEl.addEventListener('input', () => {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  });
+  sendBtn.addEventListener('click', sendMessage);
+
+  async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text || isLoading) return;
+
+    appendMessage('user', text);
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    setLoading(true);
+
+    const typingEl = appendTyping();
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, message: text })
+      });
+      const data = await res.json();
+
+      typingEl.remove();
+      appendMessage('agent', data.message);
+    } catch (err) {
+      typingEl.remove();
+      appendMessage('agent', 'Something went wrong connecting to the agent. Check that the server is running.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function appendMessage(role, text) {
+    const msg = document.createElement('div');
+    msg.className = `msg ${role}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = role === 'agent' ? 'GT' : 'You';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    if (role === 'agent') {
+      // Agent messages may contain markdown — render via DOM (no innerHTML).
+      renderMarkdown(text || '', bubble);
+    } else {
+      // User messages are plain text; pre-wrap CSS preserves newlines.
+      bubble.textContent = text || '';
+    }
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    messagesEl.appendChild(msg);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return msg;
+  }
+
+  // ── Markdown renderer (DOM-based; never uses innerHTML) ────────────────────
+  // Supports a focused subset matching what the agent actually produces:
+  // headings (#), tables (| ... |), unordered lists (- / *), ordered lists,
+  // fenced code blocks (```), inline code (`), bold (**), italic (*), and
+  // links ([text](url)). URLs are validated to http/https/relative to prevent
+  // javascript: scheme injection.
+  function renderMarkdown(text, container) {
+    const lines = text.replace(/\r\n/g, '\n').split('\n');
+    let i = 0;
+
+    const isTableSeparator = s => /^\s*\|?[\s|:\-]+\|?\s*$/.test(s) && s.includes('-');
+    const isTableRow = s => s.includes('|');
+    const isUlItem = s => /^\s*[-*]\s+/.test(s);
+    const isOlItem = s => /^\s*\d+\.\s+/.test(s);
+    const isHeading = s => /^#{1,6}\s+/.test(s);
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Skip blank lines
+      if (line.trim() === '') { i++; continue; }
+
+      // Fenced code block
+      if (/^```/.test(line)) {
+        const codeLines = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i])) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length) i++; // skip closing fence
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = codeLines.join('\n');
+        pre.appendChild(code);
+        container.appendChild(pre);
+        continue;
+      }
+
+      // Heading
+      if (isHeading(line)) {
+        const m = line.match(/^(#{1,6})\s+(.*)$/);
+        const level = Math.min(m[1].length, 4);
+        const h = document.createElement('h' + level);
+        renderInline(m[2], h);
+        container.appendChild(h);
+        i++;
+        continue;
+      }
+
+      // Table: header row, separator, then body rows
+      if (isTableRow(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+        const headerCells = splitTableRow(line);
+        i += 2; // skip header + separator
+        const bodyRows = [];
+        while (i < lines.length && isTableRow(lines[i]) && lines[i].trim() !== '') {
+          bodyRows.push(splitTableRow(lines[i]));
+          i++;
+        }
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headerTr = document.createElement('tr');
+        for (const cell of headerCells) {
+          const th = document.createElement('th');
+          renderInline(cell, th);
+          headerTr.appendChild(th);
+        }
+        thead.appendChild(headerTr);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        for (const row of bodyRows) {
+          const tr = document.createElement('tr');
+          for (const cell of row) {
+            const td = document.createElement('td');
+            renderInline(cell, td);
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        container.appendChild(table);
+        continue;
+      }
+
+      // Unordered list
+      if (isUlItem(line)) {
+        const ul = document.createElement('ul');
+        while (i < lines.length && isUlItem(lines[i])) {
+          const item = lines[i].replace(/^\s*[-*]\s+/, '');
+          const li = document.createElement('li');
+          renderInline(item, li);
+          ul.appendChild(li);
+          i++;
+        }
+        container.appendChild(ul);
+        continue;
+      }
+
+      // Ordered list
+      if (isOlItem(line)) {
+        const ol = document.createElement('ol');
+        while (i < lines.length && isOlItem(lines[i])) {
+          const item = lines[i].replace(/^\s*\d+\.\s+/, '');
+          const li = document.createElement('li');
+          renderInline(item, li);
+          ol.appendChild(li);
+          i++;
+        }
+        container.appendChild(ol);
+        continue;
+      }
+
+      // Paragraph: collect until blank line or block-level marker
+      const paraLines = [];
+      while (i < lines.length && lines[i].trim() !== '' &&
+             !/^```/.test(lines[i]) &&
+             !isHeading(lines[i]) &&
+             !isUlItem(lines[i]) &&
+             !isOlItem(lines[i]) &&
+             !(isTableRow(lines[i]) && i + 1 < lines.length && isTableSeparator(lines[i + 1]))) {
+        paraLines.push(lines[i]);
+        i++;
+      }
+      if (paraLines.length > 0) {
+        const p = document.createElement('p');
+        // Inside a paragraph, single newlines are soft breaks (rendered as <br>).
+        for (let j = 0; j < paraLines.length; j++) {
+          renderInline(paraLines[j], p);
+          if (j < paraLines.length - 1) p.appendChild(document.createElement('br'));
+        }
+        container.appendChild(p);
+      }
+    }
+  }
+
+  function splitTableRow(line) {
+    let s = line.trim();
+    if (s.startsWith('|')) s = s.slice(1);
+    if (s.endsWith('|')) s = s.slice(0, -1);
+    return s.split('|').map(c => c.trim());
+  }
+
+  // Inline tokenizer: handles `code`, **bold**, *italic*, [text](url) — leaves
+  // everything else as plain text. Builds DOM nodes (no innerHTML).
+  function renderInline(text, container) {
+    let i = 0;
+    while (i < text.length) {
+      // Inline code: `text`
+      if (text[i] === '`') {
+        const end = text.indexOf('`', i + 1);
+        if (end !== -1) {
+          const code = document.createElement('code');
+          code.textContent = text.slice(i + 1, end);
+          container.appendChild(code);
+          i = end + 1;
+          continue;
+        }
+      }
+
+      // Bold: **text**
+      if (text[i] === '*' && text[i + 1] === '*') {
+        const end = text.indexOf('**', i + 2);
+        if (end !== -1) {
+          const strong = document.createElement('strong');
+          renderInline(text.slice(i + 2, end), strong);
+          container.appendChild(strong);
+          i = end + 2;
+          continue;
+        }
+      }
+
+      // Italic: *text* (single star, not part of bold)
+      if (text[i] === '*' && text[i + 1] !== '*') {
+        const end = findClosingStar(text, i + 1);
+        if (end !== -1) {
+          const em = document.createElement('em');
+          renderInline(text.slice(i + 1, end), em);
+          container.appendChild(em);
+          i = end + 1;
+          continue;
+        }
+      }
+
+      // Link: [text](url)
+      if (text[i] === '[') {
+        const closeBracket = text.indexOf(']', i + 1);
+        if (closeBracket !== -1 && text[closeBracket + 1] === '(') {
+          const closeParen = text.indexOf(')', closeBracket + 2);
+          if (closeParen !== -1) {
+            const linkText = text.slice(i + 1, closeBracket);
+            const url = text.slice(closeBracket + 2, closeParen).trim();
+            if (isSafeUrl(url)) {
+              const a = document.createElement('a');
+              a.href = url;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              renderInline(linkText, a);
+              container.appendChild(a);
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+      }
+
+      // Plain text — advance to next special char
+      let next = text.length;
+      for (const ch of ['`', '*', '[']) {
+        const pos = text.indexOf(ch, i);
+        if (pos !== -1 && pos < next) next = pos;
+      }
+      if (next > i) {
+        container.appendChild(document.createTextNode(text.slice(i, next)));
+        i = next;
+      } else {
+        container.appendChild(document.createTextNode(text[i]));
+        i++;
+      }
+    }
+  }
+
+  function findClosingStar(text, from) {
+    // Find the next single * that isn't part of **.
+    for (let j = from; j < text.length; j++) {
+      if (text[j] === '*' && text[j + 1] !== '*' && text[j - 1] !== '*') return j;
+    }
+    return -1;
+  }
+
+  function isSafeUrl(url) {
+    // Allow http, https, mailto, relative, and fragment-only URLs.
+    return /^(https?:\/\/|mailto:|\/|#)/.test(url);
+  }
+
+  // ── Bajan-flavored loading messages ────────────────────────────────────────
+  // Cycled while the agent is thinking, so the user isn't staring at silent
+  // dots. Mix of "real-but-cheeky status" and "pure flavor". Easy to extend.
+  const BAJAN_LOADING_MESSAGES = [
+    "Wukkin' on it…",
+    "Liming with the AWS API…",
+    "Lashin' up CloudFront…",
+    "Sweetening up the bucket…",
+    "Pouring some mauby for the build…",
+    "Skylarkin' through tofu state…",
+    "Cheese on bread, so much YAML…",
+    "Coaxing IAM to behave…",
+    "On muhself, hold tight…",
+    "Wuh loss, this CDN slow today…",
+    "Fetching some fish cakes while we wait…",
+    "Sweeping out the bucket…",
+    "Asking S3 nicely…",
+    "Telling CloudFront to step on it…",
+  ];
+
+  function pickLoadingMessage(exclude) {
+    if (BAJAN_LOADING_MESSAGES.length <= 1) return BAJAN_LOADING_MESSAGES[0];
+    let next;
+    do {
+      next = BAJAN_LOADING_MESSAGES[Math.floor(Math.random() * BAJAN_LOADING_MESSAGES.length)];
+    } while (next === exclude);
+    return next;
+  }
+
+  function appendTyping() {
+    const msg = document.createElement('div');
+    msg.className = 'msg agent';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = 'GT';
+
+    const typing = document.createElement('div');
+    typing.className = 'typing';
+
+    const msgSpan = document.createElement('span');
+    msgSpan.className = 'typing-msg';
+    msgSpan.textContent = pickLoadingMessage(null);
+
+    const dotsWrap = document.createElement('span');
+    dotsWrap.className = 'typing-dots';
+    for (let i = 0; i < 3; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dotsWrap.appendChild(dot);
+    }
+
+    typing.appendChild(msgSpan);
+    typing.appendChild(dotsWrap);
+
+    msg.appendChild(avatar);
+    msg.appendChild(typing);
+    messagesEl.appendChild(msg);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    // Rotate the message every 2.4s so the wait feels alive.
+    const interval = setInterval(() => {
+      const next = pickLoadingMessage(msgSpan.textContent);
+      // Restart the fade animation on each swap.
+      msgSpan.style.animation = 'none';
+      // Force reflow so the animation restarts (read clientWidth).
+      void msgSpan.offsetWidth;
+      msgSpan.style.animation = '';
+      msgSpan.textContent = next;
+    }, 2400);
+
+    // Patch remove() so callers can still do `typingEl.remove()` and the
+    // interval gets cleaned up automatically. Avoids leaking timers.
+    const originalRemove = msg.remove.bind(msg);
+    msg.remove = () => {
+      clearInterval(interval);
+      originalRemove();
+    };
+
+    return msg;
+  }
+
+  function setLoading(val) {
+    isLoading = val;
+    sendBtn.disabled = val;
+    inputEl.disabled = val;
+  }
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+  init();
+</script>
+</body>
+</html>
