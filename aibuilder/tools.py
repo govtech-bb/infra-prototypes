@@ -128,19 +128,47 @@ def analyze_repo(path: str, **_: Any) -> dict:
     return profile.to_dict()
 
 
+def _filter_to_dataclass_fields(data: dict, cls: type) -> dict:
+    """Drop keys the dataclass doesn't know about.
+
+    The LLM occasionally invents extra keys (e.g. `force_pattern`) when it
+    wants behavior the tool doesn't support; without this filter the
+    `cls(**data)` call raises TypeError and the whole chat falls over. Quietly
+    swallowing unknowns gives the LLM a graceful path: the call still
+    succeeds, the bogus key just doesn't affect routing.
+    """
+    from dataclasses import fields
+
+    valid = {f.name for f in fields(cls)}
+    return {k: v for k, v in data.items() if k in valid}
+
+
 def recommend_architecture(profile: dict, **_: Any) -> dict:
     from analyzer import RepoProfile
+    from patterns import _CATALOG
 
-    rp = RepoProfile(**profile)
+    # Optional first-class override: the LLM can ask for a specific pattern by
+    # name (e.g. user said "show me the Fargate alternative" — agent calls
+    # recommend_architecture with pattern_override="fullstack_with_db"). If
+    # the named pattern exists in the catalog, return it directly without
+    # running the inference routing.
+    override = profile.get("pattern_override")
+    if override and override in _CATALOG:
+        return _CATALOG[override].to_dict()
+
+    rp = RepoProfile(**_filter_to_dataclass_fields(profile, RepoProfile))
     return _recommend(rp).to_dict()
 
 
 def estimate_cost(architecture: dict, **_: Any) -> dict:
     from patterns import Architecture, ArchitectureService
 
+    services = []
+    for s in architecture.get("services", []):
+        services.append(ArchitectureService(**_filter_to_dataclass_fields(s, ArchitectureService)))
     arch = Architecture(
         pattern=architecture.get("pattern", "unknown"),
-        services=[ArchitectureService(**s) for s in architecture.get("services", [])],
+        services=services,
         notes=list(architecture.get("notes", [])),
     )
     return _estimate(arch).to_dict()
@@ -191,7 +219,15 @@ TOOL_DEFINITIONS = [
         "description": (
             "Given a RepoProfile, return the recommended AWS architecture as a list of "
             "named services with per-service purpose and sizing. Do NOT invent services — "
-            "the returned services list is authoritative."
+            "the returned services list is authoritative.\n\n"
+            "To show an ALTERNATIVE pattern (e.g. user asks 'show me the Fargate "
+            "alternative' or 'estimate both options'): add `pattern_override` to the "
+            "profile dict with one of these exact catalog keys: 'static_site', "
+            "'spa_with_api', 'node_api', 'python_api', 'dockerized_web', "
+            "'fullstack_with_db', 'nextjs_amplify_hosting', 'worker'. When "
+            "pattern_override is set, the routing inference is skipped and the named "
+            "pattern is returned directly. Call recommend_architecture once per "
+            "pattern you want to compare, then estimate_cost on each."
         ),
         "input_schema": {
             "type": "object",
@@ -200,7 +236,9 @@ TOOL_DEFINITIONS = [
                     "type": "object",
                     "description": "The RepoProfile dict returned by analyze_repo, "
                     "with any user corrections applied (e.g., user said they also "
-                    "use a database → set has_database_hints to true).",
+                    "use a database → set has_database_hints to true). Optionally "
+                    "include `pattern_override` (string) to skip routing and return "
+                    "a specific catalog pattern by name.",
                 },
             },
             "required": ["profile"],

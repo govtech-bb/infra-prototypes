@@ -138,6 +138,79 @@ def test_recommend_handles_dict_profile():
     assert arch["pattern"] == "node_api"
 
 
+def test_recommend_swallows_unknown_keys_from_llm():
+    """Regression: live testing crashed when the LLM invented a `force_pattern`
+    key. RepoProfile(**profile) raised TypeError and killed the whole chat.
+    The wrapper now filters unknowns to the dataclass's known fields."""
+    profile = {
+        "app_type": "node_api",
+        "languages": ["javascript"],
+        "frameworks": ["express"],
+        "has_dockerfile": False,
+        "has_compose": False,
+        "has_database_hints": False,
+        "entry_points": ["server.js"],
+        "build_command": None,
+        "summary": "",
+        "force_pattern": "fullstack_with_db",  # the offending hallucination
+        "made_up_key": "anything",
+    }
+    arch = recommend_architecture(profile)
+    # Bogus keys are dropped, routing runs normally → node_api.
+    assert arch["pattern"] == "node_api"
+
+
+def test_estimate_cost_swallows_unknown_service_keys():
+    """Same robustness: if the LLM passes an architecture dict with extra
+    keys on services, estimate_cost should not raise."""
+    architecture = {
+        "pattern": "static_site",
+        "services": [
+            {
+                "aws_service": "S3",
+                "purpose": "Stores assets",
+                "sizing": {"storage_gb": 1},
+                "extra_invented_field": "ignore me",
+            },
+        ],
+        "notes": [],
+    }
+    cost = estimate_cost(architecture)
+    assert cost["lines"][0]["service"] == "S3"
+
+
+def test_recommend_pattern_override_returns_named_pattern():
+    """Audit follow-up: give the LLM a first-class way to ask for a specific
+    pattern (the underlying need behind the `force_pattern` hallucination).
+    Used for 'show me the alternative' / 'estimate both options' chat flows."""
+    profile = {
+        "app_type": "spa_with_api",
+        "frameworks": ["next", "react"],
+        "has_dockerfile": False,
+        "has_database_hints": True,
+        "pattern_override": "fullstack_with_db",
+    }
+    # Without the override, this profile would route to nextjs_amplify_hosting
+    # (Next.js + no Dockerfile + db hints). The override forces the alternative.
+    arch = recommend_architecture(profile)
+    assert arch["pattern"] == "fullstack_with_db"
+    services = [s["aws_service"] for s in arch["services"]]
+    assert "ECS Fargate" in services and "RDS PostgreSQL" in services
+
+
+def test_recommend_ignores_unknown_pattern_override():
+    """If the LLM passes a bogus override key, fall back to routing."""
+    profile = {
+        "app_type": "node_api",
+        "frameworks": ["express"],
+        "has_dockerfile": False,
+        "pattern_override": "not_a_real_pattern",
+    }
+    arch = recommend_architecture(profile)
+    # Falls through to normal routing → node_api.
+    assert arch["pattern"] == "node_api"
+
+
 def test_tool_definitions_shape():
     from tools import TOOL_DEFINITIONS
 
