@@ -201,6 +201,107 @@ def test_remix_no_dockerfile_routes_to_amplify():
     assert arch.pattern == "nextjs_amplify_hosting"
 
 
+# ── Medium-tier audit follow-ups: cross-cutting note coverage ────────────────
+
+
+def test_custom_domain_note_appears_in_route53_patterns():
+    """Audit follow-up: every internet-facing pattern that uses CloudFront /
+    APIGW / ALB should mention the Route53 + ACM custom-domain recipe.
+    Amplify is excluded because it has its own console-based flow with a
+    different note."""
+    patterns_needing = [
+        "static_site",
+        "spa_with_api",
+        "node_api",
+        "python_api",
+        "dockerized_web",
+        "fullstack_with_db",
+    ]
+    for pattern_key in patterns_needing:
+        arch = recommend(RepoProfile(app_type=pattern_key))
+        notes_text = " | ".join(arch.notes)
+        assert "Route53" in notes_text, f"{pattern_key} missing Route53 mention"
+        assert "ACM" in notes_text, f"{pattern_key} missing ACM mention"
+
+
+def test_vpc_baseline_note_appears_in_fargate_patterns():
+    for pattern_key in ["dockerized_web", "fullstack_with_db"]:
+        arch = recommend(RepoProfile(app_type=pattern_key))
+        notes_text = " | ".join(arch.notes)
+        assert "VPC" in notes_text, f"{pattern_key} missing VPC note"
+        assert "NAT" in notes_text, f"{pattern_key} missing NAT Gateway warning"
+
+
+def test_cloudwatch_retention_note_in_log_emitting_patterns():
+    """Lambda + Fargate + worker patterns all create CloudWatch log groups
+    that default to never-expire retention — silent cost trap. The note
+    should appear everywhere user code writes logs."""
+    patterns_needing = [
+        "spa_with_api",
+        "node_api",
+        "python_api",
+        "dockerized_web",
+        "fullstack_with_db",
+        "worker",
+    ]
+    for pattern_key in patterns_needing:
+        arch = recommend(RepoProfile(app_type=pattern_key))
+        notes_text = " | ".join(arch.notes)
+        assert "retention" in notes_text.lower(), f"{pattern_key} missing retention note"
+
+
+def test_fullstack_with_db_has_secrets_management_note():
+    """Audit follow-up: fullstack_with_db is the only pattern with a real
+    credential (DATABASE_URL). The note should default to Parameter Store
+    and explain when to upgrade to Secrets Manager."""
+    arch = recommend(RepoProfile(app_type="fullstack_with_db"))
+    notes_text = " | ".join(arch.notes)
+    assert "Parameter Store" in notes_text
+    assert "Secrets Manager" in notes_text  # mentioned as the upgrade
+    assert "rotation" in notes_text.lower()  # the trigger for upgrading
+
+
+def test_fullstack_with_db_warns_about_public_rds():
+    """Audit follow-up: catalog used to say nothing about subnet placement.
+    Real users were known to put RDS in a public subnet for 'easier dev
+    access' — a footgun. The note must explicitly call this out."""
+    arch = recommend(RepoProfile(app_type="fullstack_with_db"))
+    notes_text = " | ".join(arch.notes)
+    assert "private subnet" in notes_text.lower()
+    assert "0.0.0.0/0" in notes_text or "never expose" in notes_text.lower()
+
+
+def test_amplify_mentions_oauth_and_branch_previews():
+    """Audit follow-up: Amplify Gen 2 completeness pass — the catalog should
+    surface the one-time GitHub OAuth setup AND the branch-preview
+    environments (the latter being a key Gen 2 selling point)."""
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["next", "react"],
+        has_dockerfile=False,
+    )
+    arch = recommend(profile)
+    notes_text = " | ".join(arch.notes)
+    assert "GitHub" in notes_text
+    assert "OAuth" in notes_text or "console" in notes_text.lower()
+    assert "preview" in notes_text.lower()
+
+
+def test_amplify_mentions_define_backend_and_sql_data_source():
+    """Audit follow-up: previous catalog only mentioned DynamoDB; defineData
+    can also back AppSync resolvers against an existing RDS/Aurora SQL
+    cluster. Also surface `defineBackend` as the root composition function."""
+    profile = RepoProfile(
+        app_type="spa_with_api",
+        frameworks=["next", "react"],
+        has_dockerfile=False,
+    )
+    arch = recommend(profile)
+    notes_text = " | ".join(arch.notes)
+    assert "defineBackend" in notes_text
+    assert "SQL data source" in notes_text or "RDS" in notes_text
+
+
 def test_express_only_does_not_route_to_amplify():
     """Pattern stays as the existing spa_with_api when no SSR-default
     frontend framework is detected — Amplify Hosting is only the right

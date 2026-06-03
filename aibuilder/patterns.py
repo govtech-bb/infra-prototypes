@@ -36,6 +36,33 @@ class Architecture:
         }
 
 
+# ── Shared notes (audit follow-up: cross-cutting gaps surfaced in the SME pass) ───
+# These get appended to multiple patterns to avoid copy-paste drift. Edit here,
+# applies everywhere it's referenced.
+
+_CUSTOM_DOMAIN_NOTE = (
+    "Custom domain (optional): create a Route53 public hosted zone (~$0.50/mo) "
+    "and an ACM certificate (free). For CloudFront and edge endpoints, request "
+    "the cert in us-east-1; for ALB and regional endpoints, request it in the "
+    "same region as the resource. Point your domain via a Route53 alias record."
+)
+
+_CLOUDWATCH_RETENTION_NOTE = (
+    "CloudWatch Logs and basic metrics are on by default and stay in the free "
+    "tier at prototype traffic. One gotcha: log groups default to never-expire "
+    "retention — set 7- or 14-day retention to avoid surprise costs as the app "
+    "accumulates noise."
+)
+
+_VPC_BASELINE_NOTE = (
+    "VPC baseline: 1 VPC with 2 public subnets across 2 AZs (and 2 private "
+    "subnets if you have a database). Fargate task in a public subnet pulls "
+    "from public ECR via the Internet Gateway — no NAT Gateway needed for "
+    "prototypes. NAT Gateway is the silent ~$32/mo budget killer; avoid until "
+    "you actually need outbound internet from a private resource."
+)
+
+
 _CATALOG: dict[str, Architecture] = {
     "static_site": Architecture(
         pattern="static_site",
@@ -55,6 +82,7 @@ _CATALOG: dict[str, Architecture] = {
             "CloudFront reads from S3 via Origin Access Control (OAC); the "
             "bucket stays private. OAC is the current AWS recommendation — "
             "older Origin Access Identity (OAI) is in maintenance.",
+            _CUSTOM_DOMAIN_NOTE,
         ],
     ),
     "spa_with_api": Architecture(
@@ -94,6 +122,8 @@ _CATALOG: dict[str, Architecture] = {
             "CloudFront proxies /api/* to API Gateway as a separate cache "
             "behavior so the SPA and the API live under one origin (no CORS "
             "to manage).",
+            _CUSTOM_DOMAIN_NOTE,
+            _CLOUDWATCH_RETENTION_NOTE,
         ],
     ),
     "node_api": Architecture(
@@ -118,6 +148,8 @@ _CATALOG: dict[str, Architecture] = {
             "Alternative: ECS Fargate if you have long-lived connections, "
             "WebSockets, or you need to run a process that doesn't fit Lambda's "
             "15-minute / 10 GB envelope.",
+            _CUSTOM_DOMAIN_NOTE,
+            _CLOUDWATCH_RETENTION_NOTE,
         ],
     ),
     "python_api": Architecture(
@@ -147,6 +179,8 @@ _CATALOG: dict[str, Architecture] = {
             "layer; both work, LWA is the current AWS-blessed path.",
             "Alternative: ECS Fargate if your framework has slow cold starts "
             "or long-lived background work.",
+            _CUSTOM_DOMAIN_NOTE,
+            _CLOUDWATCH_RETENTION_NOTE,
         ],
     ),
     "dockerized_web": Architecture(
@@ -165,6 +199,9 @@ _CATALOG: dict[str, Architecture] = {
             "Alternative: ECS Express Mode for App-Runner-style simpler config "
             "— AWS now guides new container workloads to Express Mode or full "
             "Fargate rather than App Runner.",
+            _VPC_BASELINE_NOTE,
+            _CUSTOM_DOMAIN_NOTE,
+            _CLOUDWATCH_RETENTION_NOTE,
         ],
     ),
     "fullstack_with_db": Architecture(
@@ -187,6 +224,18 @@ _CATALOG: dict[str, Architecture] = {
             "Alternative: ECS Express Mode for simpler config than full "
             "Fargate — AWS now guides new container workloads to Express Mode "
             "or full Fargate rather than App Runner.",
+            _VPC_BASELINE_NOTE,
+            "Put RDS in a private subnet with a DB security group that only "
+            "accepts traffic from the Fargate task SG — never expose the DB "
+            "to 0.0.0.0/0 even for dev convenience.",
+            "Secrets: default DATABASE_URL and other credentials to SSM "
+            "Parameter Store (Standard tier, free) and reference them from "
+            "your ECS task definition's `secrets:` block. Switch to AWS "
+            "Secrets Manager (~$0.40/secret/mo) only if you need automatic "
+            "rotation (built-in for RDS), cross-account sharing, or KMS-per-"
+            "secret separation.",
+            _CUSTOM_DOMAIN_NOTE,
+            _CLOUDWATCH_RETENTION_NOTE,
         ],
     ),
     "nextjs_amplify_hosting": Architecture(
@@ -211,17 +260,32 @@ _CATALOG: dict[str, Architecture] = {
         notes=[
             "We're recommending Amplify Gen 2 specifically — Gen 1 (the older "
             "console-driven Amplify Hosting) is in maintenance mode.",
-            "Amplify Gen 2 also bundles a data layer (AppSync + DynamoDB), "
-            "auth (Cognito), file storage (S3), and Lambda functions — all "
-            "defined in TypeScript alongside your app via `defineData`, "
-            "`defineAuth`, etc. The $3/mo above is hosting only; the bundled "
-            "primitives meter separately but are usually covered by the AWS "
+            "Amplify Gen 2 also bundles a data layer (AppSync resolvers "
+            "backed by DynamoDB by default, OR by an existing RDS / Aurora "
+            "SQL cluster via the SQL data source), auth (Cognito), file "
+            "storage (S3), and Lambda functions — all defined in TypeScript "
+            "via `defineBackend({ auth, data, storage, ... })` in "
+            "`amplify/backend.ts`. The hosting cost above is hosting only; "
+            "bundled primitives meter separately but usually land in the AWS "
             "free tier at prototype traffic.",
             "If your repo already uses an external backend (Supabase, "
             "Firebase, PlanetScale, Neon), you can keep it — Amplify Hosting "
             "just runs your app, the bundled data layer is opt-in. To move "
             "off your external DB later, you can adopt AppSync+DynamoDB "
             "incrementally or migrate to ECS Fargate + RDS PostgreSQL.",
+            "First-time setup: connect GitHub in the Amplify console (one-"
+            "time OAuth per AWS account). After that, push to a tracked "
+            "branch deploys automatically; pull requests get isolated "
+            "preview environments with their own URLs and backend resources "
+            "— this is one of Gen 2's biggest day-one wins.",
+            "Per-branch env vars and secrets are set in the Amplify console "
+            "under branch settings. For runtime secrets, prefer "
+            "`defineFunction` with parameter access or SSM Parameter Store "
+            "— never commit secrets to `backend.ts`.",
+            "Custom domains are managed inside the Amplify console — no "
+            "separate Route53 work needed if the zone already exists in "
+            "your account. Amplify provisions the ACM cert and DNS records "
+            "automatically.",
             "Alternative: ECS Fargate + RDS PostgreSQL if you want a "
             "traditional Postgres database (vs DynamoDB) and BYO containers "
             "instead of managed hosting.",
@@ -241,7 +305,10 @@ _CATALOG: dict[str, Architecture] = {
                 sizing={"memory_mb": 512, "duration_ms": 5000, "invocations_per_month": 720},
             ),
         ],
-        notes=["Alternative: ECS Fargate scheduled task if jobs run longer than 15 min."],
+        notes=[
+            "Alternative: ECS Fargate scheduled task if jobs run longer than 15 min.",
+            _CLOUDWATCH_RETENTION_NOTE,
+        ],
     ),
 }
 
