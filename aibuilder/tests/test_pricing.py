@@ -177,3 +177,31 @@ def test_queue_worker_sqs_is_free_at_prototype_scale():
     assert sqs_line.monthly_usd == 0.00
     # Total must stay cheap
     assert result.total_monthly_usd < 1.00
+
+
+# ── Item 17: internal_tool pricing ───────────────────────────────────────────
+
+
+def test_internal_tool_cost_estimate():
+    """Item #17: internal_tool has more services than fullstack_with_db --
+    internal ALB ($16) + Fargate ($9) + RDS ($12) + WAF ($10) + Secrets
+    ($0.40) + Cognito ($0) + Route53 Private Zone ($0.50) = ~$47.90.
+    Assert total is between $45 and $55 and that all services have prices."""
+    from patterns import _CATALOG
+    from pricing import estimate
+
+    arch = _CATALOG["internal_tool"]
+    result = estimate(arch)
+    # Total in the expected range
+    assert result.total_monthly_usd >= 45
+    assert result.total_monthly_usd <= 55
+    # Cognito is free
+    cognito_line = next(line for line in result.lines if line.service == "Cognito User Pool")
+    assert cognito_line.monthly_usd == 0.00
+    # WAF should be roughly $10
+    waf_line = next(line for line in result.lines if line.service == "AWS WAF")
+    assert waf_line.monthly_usd >= 8.00
+    # Secrets Manager should be ~$0.40
+    secrets_line = next(line for line in result.lines if line.service == "Secrets Manager")
+    assert secrets_line.monthly_usd <= 1.00
+    assert secrets_line.monthly_usd > 0.00

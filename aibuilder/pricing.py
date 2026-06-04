@@ -87,6 +87,24 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
     # SQS Standard: first 1M requests/mo free. At prototype scale (100k messages)
     # this is $0. FIFO queues are slightly more expensive but not modeled here.
     "SQS": (0.00, "first 1M requests/mo are free; at prototype scale (100k messages) this is $0"),
+    # Internal ALB: same fixed hourly charge as a public ALB ($0.0225/hr * 730 = ~$16/mo).
+    # The internal vs public distinction is scheme-only; pricing is identical.
+    "Application Load Balancer (internal)": (
+        16.00,
+        "same pricing as a public ALB: fixed hourly ~$16/mo (LCU at prototype traffic is negligible)",
+    ),
+    # Cognito User Pool: free for first 50,000 MAU. Internal tools comfortably stay in free tier.
+    "Cognito User Pool": (0.00, "free for first 50,000 MAU; internal tools stay well inside this"),
+    # AWS WAF: $5/mo WebACL + managed rule group charges + per-request meter.
+    # At prototype traffic the per-request meter is negligible; ~$10/mo is the conservative round.
+    "AWS WAF": (
+        10.00,
+        "~$5/mo WebACL + AWS Managed Rules; per-request meter negligible at prototype traffic",
+    ),
+    # Secrets Manager: $0.40/secret/mo. One secret (DATABASE_URL) = $0.40/mo.
+    "Secrets Manager": (0.40, "~$0.40/secret/mo; 1 secret (DATABASE_URL with automatic rotation)"),
+    # Route53 Private Hosted Zone: $0.50/zone/mo.
+    "Route53 Private Hosted Zone": (0.50, "~$0.50/mo per private hosted zone"),
 }
 
 # Per-service sizing/traffic assumptions. Only contribute to the user-facing

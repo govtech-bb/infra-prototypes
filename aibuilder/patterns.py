@@ -244,6 +244,11 @@ _CATALOG: dict[str, Architecture] = {
             "Alternative: ECS Express Mode for simpler config than full "
             "Fargate — AWS now guides new container workloads to Express Mode "
             "or full Fargate rather than App Runner.",
+            "Internal-only alternative: if this app should NOT be reachable from "
+            "the public internet (e.g. a staff tool behind VPN / Direct Connect), "
+            'use `pattern_override="internal_tool"` instead — that switches the '
+            "ALB to internal-scheme and adds Cognito auth, AWS WAF, and Secrets "
+            "Manager with automatic credential rotation.",
             _VPC_BASELINE_NOTE,
             "Put RDS in a private subnet with a DB security group that only "
             "accepts traffic from the Fargate task SG — never expose the DB "
@@ -475,6 +480,111 @@ _CATALOG: dict[str, Architecture] = {
             "FIFO queue (.fifo suffix). FIFO has a different pricing model "
             "(~$0.50/M requests vs $0.40/M) and a maximum throughput of "
             "3,000 messages/sec with batching.",
+            _CLOUDWATCH_RETENTION_NOTE,
+        ],
+    ),
+    "internal_tool": Architecture(
+        pattern="internal_tool",
+        services=[
+            ArchitectureService(
+                aws_service="Application Load Balancer (internal)",
+                purpose=(
+                    "Internal-scheme ALB — not reachable from the public internet. "
+                    "Only accessible from inside the VPC (via VPN, Direct Connect, "
+                    "or a peered VPC). Terminates TLS via ACM, routes to the "
+                    "Fargate task on a target group, and enforces Cognito "
+                    "authentication via the ALB listener's authenticate-cognito "
+                    "action before any traffic reaches the app."
+                ),
+                sizing={"lcu_per_month": "<1 at prototype traffic"},
+            ),
+            ArchitectureService(
+                aws_service="ECS Fargate",
+                purpose=(
+                    "Hosts your internal tool container in private subnets — "
+                    "no public IP, no internet-facing ENI."
+                ),
+                sizing={"vcpu": 0.25, "memory_gb": 0.5, "requests_per_month": 100_000},
+            ),
+            ArchitectureService(
+                aws_service="RDS PostgreSQL",
+                purpose=(
+                    "Managed database (db.t4g.micro, 20 GB gp3, Single-AZ) in a "
+                    "private subnet, encryption at rest enabled. Credential "
+                    "rotation handled by Secrets Manager."
+                ),
+                sizing={"instance_class": "db.t4g.micro", "storage_gb": 20},
+            ),
+            ArchitectureService(
+                aws_service="Cognito User Pool",
+                purpose=(
+                    "Staff sign-in. Integrate with the ALB authenticate-cognito "
+                    "listener action so the ALB requires a valid Cognito session "
+                    "before forwarding any request to Fargate. Free for the first "
+                    "50,000 MAU — covers any internal GovTech tool."
+                ),
+                sizing={"mau": 50},
+            ),
+            ArchitectureService(
+                aws_service="AWS WAF",
+                purpose=(
+                    "Web Application Firewall attached to the ALB. Enforces AWS "
+                    "Managed Rules (OWASP Top 10 baseline) even for internal apps "
+                    "— lateral movement from inside the network is a real threat "
+                    "vector. ~$10/mo: $5/mo WebACL + managed rule groups + "
+                    "negligible per-request meter at prototype traffic."
+                ),
+                sizing={"web_acl": 1, "managed_rule_groups": 1},
+            ),
+            ArchitectureService(
+                aws_service="Secrets Manager",
+                purpose=(
+                    "Stores DATABASE_URL and any other credentials with automatic "
+                    "rotation. Preferred over Parameter Store for internal tools "
+                    "where staff PII or case data is in the database — rotation "
+                    "is the default for RDS-backed secrets, not an option."
+                ),
+                sizing={"secrets": 1},
+            ),
+            ArchitectureService(
+                aws_service="Route53 Private Hosted Zone",
+                purpose=(
+                    "Resolves *.internal.govtech.bb (or your equivalent) inside "
+                    "the VPC without exposing DNS records to the public internet. "
+                    "Optional but recommended so staff can use a human-readable "
+                    "hostname rather than the ALB's auto-generated DNS name."
+                ),
+                sizing={"hosted_zones": 1},
+            ),
+        ],
+        notes=[
+            "Internal-only: this pattern's ALB is private-scheme and only "
+            "reachable from inside the VPC (via VPN, Direct Connect, or a "
+            "peered VPC). No public internet exposure — a public-scheme ALB "
+            "is the fullstack_with_db pattern.",
+            "Cognito User Pool for staff sign-in: integrate with the ALB "
+            "authenticate-cognito listener action to require login before any "
+            "traffic reaches Fargate. Free tier covers 50,000 MAU — more than "
+            "enough for any GovTech internal tool.",
+            "AWS WAF baseline: $5/mo WebACL + AWS Managed Rules (OWASP Top 10) "
+            "+ per-request meter (negligible at prototype traffic). For an "
+            "internal GovTech tool handling citizen data this is table stakes, "
+            "not optional — attach it to the ALB from day one.",
+            "Secrets Manager (not Parameter Store) for DATABASE_URL: automatic "
+            "rotation is the default for RDS-backed secrets and is the right "
+            "choice when staff PII or case data lives in the database. "
+            "Parameter Store is fine for non-sensitive config; "
+            "Secrets Manager is the right call here.",
+            "Route53 Private Hosted Zone for *.internal.govtech.bb resolution "
+            "inside the VPC. Costs ~$0.50/mo per zone. Create an alias record "
+            "pointing to the internal ALB's DNS name.",
+            "VPC layout for internal tools: all Fargate and RDS subnets are "
+            "private. Unlike the prototype-tier public-subnet setup, private "
+            "Fargate tasks cannot reach ECR directly via the Internet Gateway "
+            "— you need a NAT Gateway (~$32/mo) OR VPC endpoints for ECR, S3, "
+            "and Secrets Manager (cheaper for production, slightly more to "
+            "configure). Plan for this cost difference vs the standard "
+            "VPC baseline.",
             _CLOUDWATCH_RETENTION_NOTE,
         ],
     ),

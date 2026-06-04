@@ -537,3 +537,120 @@ def test_worker_notes_mention_queue_worker_alternative():
     arch = _CATALOG["worker"]
     notes_text = " | ".join(arch.notes)
     assert "queue_worker" in notes_text
+
+
+# ── Item 17: internal_tool (GovTech-internal app variant) ────────────────────
+
+
+def test_internal_tool_pattern_includes_waf_and_cognito():
+    """Item #17: internal_tool must include both AWS WAF and Cognito User
+    Pool -- WAF for OWASP baseline coverage, Cognito for staff auth via the
+    ALB authenticate-cognito action."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["internal_tool"]
+    services = [s.aws_service for s in arch.services]
+    assert "AWS WAF" in services
+    assert "Cognito User Pool" in services
+
+
+def test_internal_tool_uses_internal_alb():
+    """Item #17: the ALB service name must include '(internal)' to distinguish
+    it from the public-scheme ALB in fullstack_with_db -- they are priced the
+    same but the internal flag makes the ALB non-internet-facing."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["internal_tool"]
+    services = [s.aws_service for s in arch.services]
+    # Internal ALB is the first service (front-door ordering)
+    assert services[0] == "Application Load Balancer (internal)"
+    # Must NOT include the public-scheme ALB
+    assert "Application Load Balancer" not in services
+
+
+def test_internal_tool_uses_secrets_manager_not_parameter_store():
+    """Item #17: internal_tool should prefer Secrets Manager (automatic
+    rotation) over Parameter Store for DATABASE_URL. The notes must say
+    so explicitly -- this is the key ops difference from fullstack_with_db."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["internal_tool"]
+    # Secrets Manager must be in the services list
+    services = [s.aws_service for s in arch.services]
+    assert "Secrets Manager" in services
+    # Notes must prefer Secrets Manager over Parameter Store
+    notes_text = " | ".join(arch.notes)
+    assert "Secrets Manager" in notes_text
+    assert "rotation" in notes_text.lower()
+
+
+def test_internal_tool_notes_mention_internal_alb_not_public():
+    """Item #17: notes must explicitly say the ALB is internal-scheme and
+    not reachable from the public internet -- the whole point of this variant
+    is that fullstack_with_db's public ALB is the wrong default for GovTech
+    internal apps."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["internal_tool"]
+    notes_text = " | ".join(arch.notes)
+    assert "internal" in notes_text.lower()
+    assert "public internet" in notes_text.lower() or "not reachable" in notes_text.lower()
+
+
+def test_internal_tool_notes_mention_cognito_alb_auth():
+    """Item #17: the Cognito integration must be explained in the notes --
+    staff sign-in is enforced at the ALB listener (authenticate-cognito
+    action), not in the app code."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["internal_tool"]
+    notes_text = " | ".join(arch.notes)
+    assert "Cognito" in notes_text
+    assert "50,000 MAU" in notes_text or "50k MAU" in notes_text or "free" in notes_text.lower()
+
+
+def test_internal_tool_total_cost():
+    """Item #17: total monthly cost at prototype scale should be roughly $47-48:
+    Fargate $9 + RDS $12 + ALB $16 + WAF $10 + Secrets $0.40 + Cognito $0 +
+    Route53 $0.50 = ~$47.90. Test asserts between $45 and $55."""
+    from patterns import _CATALOG
+    from pricing import estimate
+
+    arch = _CATALOG["internal_tool"]
+    result = estimate(arch)
+    assert result.total_monthly_usd >= 45
+    assert result.total_monthly_usd <= 55
+    # Individual service lines
+    services = [line.service for line in result.lines]
+    assert "Application Load Balancer (internal)" in services
+    assert "ECS Fargate" in services
+    assert "RDS PostgreSQL" in services
+    assert "AWS WAF" in services
+    assert "Secrets Manager" in services
+    assert "Cognito User Pool" in services
+    # Cognito is free
+    cognito_line = next(line for line in result.lines if line.service == "Cognito User Pool")
+    assert cognito_line.monthly_usd == 0.00
+
+
+def test_internal_tool_reachable_via_pattern_override():
+    """Item #17: pattern_override='internal_tool' must resolve through the
+    tool layer."""
+    from tools import recommend_architecture
+
+    result = recommend_architecture({"pattern_override": "internal_tool"})
+    assert result["pattern"] == "internal_tool"
+    services = [s["aws_service"] for s in result["services"]]
+    assert "Application Load Balancer (internal)" in services
+    assert "AWS WAF" in services
+    assert "Cognito User Pool" in services
+
+
+def test_fullstack_with_db_notes_mention_internal_tool_alternative():
+    """Item #17: fullstack_with_db's notes must mention internal_tool as the
+    alternative for users who say their app is internal-only / staff-facing."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["fullstack_with_db"]
+    notes_text = " | ".join(arch.notes)
+    assert "internal_tool" in notes_text
