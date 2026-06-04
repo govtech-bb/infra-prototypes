@@ -1,5 +1,8 @@
 """Tests for cost estimation."""
 
+import json
+from unittest.mock import MagicMock, patch
+
 from analyzer import RepoProfile
 from patterns import Architecture, ArchitectureService, recommend
 from pricing import CostEstimate, CostLine, estimate
@@ -205,3 +208,144 @@ def test_internal_tool_cost_estimate():
     secrets_line = next(line for line in result.lines if line.service == "Secrets Manager")
     assert secrets_line.monthly_usd <= 1.00
     assert secrets_line.monthly_usd > 0.00
+
+
+# ── Item 18: live AWS Pricing API (Lambda, Phase 1.5) ────────────────────────
+
+# Helpers -- build a minimal but structurally valid Pricing API response.
+
+
+def _make_pricing_response(price_usd: str) -> dict:
+    """Return a fake get_products response with a single price dimension."""
+    product = {
+        "product": {"sku": "FAKE123"},
+        "terms": {
+            "OnDemand": {
+                "FAKE123.JRTCKXETXF": {
+                    "priceDimensions": {
+                        "FAKE123.JRTCKXETXF.6YS6EN2CT7": {
+                            "pricePerUnit": {"USD": price_usd},
+                            "unit": "Requests",
+                        }
+                    }
+                }
+            }
+        },
+    }
+    return {"PriceList": [json.dumps(product)]}
+
+
+def _make_boto_client(request_price: str = "0.0000002", compute_price: str = "0.0000166667"):
+    """Return a MagicMock boto3 client whose get_products alternates between
+    the request-price response and the compute-price response."""
+    client_mock = MagicMock()
+    client_mock.get_products.side_effect = [
+        _make_pricing_response(request_price),  # first call: Requests SKU
+        _make_pricing_response(compute_price),  # second call: Duration SKU
+    ]
+    return client_mock
+
+
+def test_live_lambda_price_used_when_api_responds():
+    """Phase 1.5: when the Pricing API returns valid Lambda rates, the Lambda
+    cost line note contains 'live' or 'queried' and is_fallback is False."""
+    import pricing
+
+    pricing._LIVE_PRICE_CACHE.clear()
+
+    arch = Architecture(
+        pattern="node_api",
+        services=[ArchitectureService("Lambda", "lambda", {})],
+    )
+
+    client_mock = _make_boto_client()
+    with patch("pricing.boto3.client", return_value=client_mock):
+        result = estimate(arch)
+
+    lambda_line = next(line for line in result.lines if line.service == "Lambda")
+    assert "live" in lambda_line.note or "queried" in lambda_line.note
+    assert result.is_fallback is False
+
+
+def test_falls_back_when_pricing_api_raises():
+    """Phase 1.5: when the Pricing API raises, the Lambda line still has a
+    price (from the static fallback table) and is_fallback is True."""
+    import pricing
+
+    pricing._LIVE_PRICE_CACHE.clear()
+
+    arch = Architecture(
+        pattern="node_api",
+        services=[ArchitectureService("Lambda", "lambda", {})],
+    )
+
+    with patch("pricing.boto3.client", side_effect=Exception("no credentials")):
+        result = estimate(arch)
+
+    lambda_line = next(line for line in result.lines if line.service == "Lambda")
+    # Fallback table has Lambda at $0.10
+    assert lambda_line.monthly_usd == 0.10
+    assert result.is_fallback is True
+
+
+def test_falls_back_when_pricing_api_returns_unparseable_response():
+    """Phase 1.5: an empty or malformed PriceList triggers the fallback path."""
+    import pricing
+
+    pricing._LIVE_PRICE_CACHE.clear()
+
+    arch = Architecture(
+        pattern="node_api",
+        services=[ArchitectureService("Lambda", "lambda", {})],
+    )
+
+    # Return an empty PriceList -- _extract_price_per_unit will return None.
+    bad_client = MagicMock()
+    bad_client.get_products.return_value = {"PriceList": []}
+
+    with patch("pricing.boto3.client", return_value=bad_client):
+        result = estimate(arch)
+
+    lambda_line = next(line for line in result.lines if line.service == "Lambda")
+    assert lambda_line.monthly_usd == 0.10
+    assert result.is_fallback is True
+
+
+def test_live_resolver_is_cached_per_process():
+    """Phase 1.5: the boto3 client is only created once per process lifetime
+    for a given service -- subsequent estimate() calls use the cached result."""
+    import pricing
+
+    pricing._LIVE_PRICE_CACHE.clear()
+
+    arch = Architecture(
+        pattern="node_api",
+        services=[ArchitectureService("Lambda", "lambda", {})],
+    )
+
+    client_mock = _make_boto_client()
+    with patch("pricing.boto3.client", return_value=client_mock) as boto_patch:
+        estimate(arch)
+        estimate(arch)  # second call -- should NOT hit boto3.client again
+
+    # boto3.client itself should only have been called once (cache hit on second estimate)
+    assert boto_patch.call_count == 1
+
+
+def test_static_site_remains_fallback_with_live_lambda_resolver_present():
+    """Phase 1.5: patterns that don't include Lambda (e.g. static_site = S3 +
+    CloudFront) should still get is_fallback=True because no live resolver
+    covers those services yet."""
+    import pricing
+
+    pricing._LIVE_PRICE_CACHE.clear()
+
+    arch = recommend(RepoProfile(app_type="static_site"))
+    # No need to mock boto3 -- the live resolvers for S3/CloudFront don't exist,
+    # so boto3 is never called for a static_site estimate.
+    result = estimate(arch)
+
+    assert result.is_fallback is True
+    services = [line.service for line in result.lines]
+    assert "S3" in services
+    assert "CloudFront" in services
