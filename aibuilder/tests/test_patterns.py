@@ -369,3 +369,80 @@ def test_express_only_does_not_route_to_amplify():
     arch = recommend(profile)
     assert arch.pattern == "spa_with_api"
     assert "Amplify Hosting" not in [s.aws_service for s in arch.services]
+
+
+# ── Item 15: workflow_worker (Step Functions Express + Lambda) ────────────────
+
+
+def test_workflow_worker_pattern_has_step_functions_and_lambda():
+    """Item #15: workflow_worker must expose Step Functions (Express) and
+    Lambda as its two services — in that order (orchestrator first, then
+    the workers it invokes)."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["workflow_worker"]
+    services = [s.aws_service for s in arch.services]
+    assert services == ["Step Functions (Express)", "Lambda"]
+    assert arch.pattern == "workflow_worker"
+
+
+def test_workflow_worker_notes_mention_express_vs_standard():
+    """Item #15: the Express-vs-Standard tradeoff must be explained —
+    Express is the prototype default (cheap, ≤5 min); Standard is for
+    human-in-loop / long-running workflows. Both the timing constraint
+    and the cost benefit should be present."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["workflow_worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "Express" in notes_text
+    assert "Standard" in notes_text
+    # Express cap on execution time
+    assert "5 min" in notes_text
+    # Human-approval / long-running signal for Standard
+    assert "human" in notes_text.lower() or "approval" in notes_text.lower()
+
+
+def test_workflow_worker_notes_mention_when_to_use_vs_worker():
+    """Item #15: the notes should guide users to pick the right pattern —
+    single-script → worker; multi-step / orchestration → workflow_worker;
+    queue-driven → queue_worker."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["workflow_worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "worker" in notes_text.lower()
+    assert "queue_worker" in notes_text or "queue" in notes_text.lower()
+
+
+def test_workflow_worker_cloudwatch_retention_note():
+    """Item #15: workflow_worker emits Lambda logs — the retention note
+    must be present."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["workflow_worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "retention" in notes_text.lower()
+
+
+def test_workflow_worker_reachable_via_pattern_override():
+    """Item #15: pattern_override='workflow_worker' must resolve through
+    the tool layer (recommend_architecture) — this is the only public
+    entrypoint the agent uses."""
+    from tools import recommend_architecture
+
+    result = recommend_architecture({"pattern_override": "workflow_worker"})
+    assert result["pattern"] == "workflow_worker"
+    services = [s["aws_service"] for s in result["services"]]
+    assert "Step Functions (Express)" in services
+    assert "Lambda" in services
+
+
+def test_worker_notes_mention_workflow_worker_alternative():
+    """Item #15: existing worker pattern's notes must point users toward
+    workflow_worker when they have multi-step / orchestration needs."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "workflow_worker" in notes_text

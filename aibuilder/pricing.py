@@ -76,6 +76,14 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
     ),
     "RDS PostgreSQL": (12.00, "db.t4g.micro, 20 GB gp3, Single-AZ"),
     "EventBridge Scheduler": (0.00, "<1k invocations/mo is in the free tier"),
+    # Step Functions Express: $1/M state transitions + $0.00001667/GB-s execution.
+    # 720 exec/mo x 5 transitions = 3,600 transitions -- essentially free.
+    # $0.10/mo is a conservative round to cover small compute overhead.
+    "Step Functions (Express)": (
+        0.10,
+        "~720 executions x 5 transitions/exec = 3,600 transitions ($1/M rate) -- "
+        "effectively free at prototype scale; $0.10 is a conservative round",
+    ),
 }
 
 # Per-service sizing/traffic assumptions. Only contribute to the user-facing

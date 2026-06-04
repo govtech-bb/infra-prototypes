@@ -135,3 +135,24 @@ def test_assumptions_match_chosen_services():
     assert "Lambda" in spa_text
     assert "Fargate" not in spa_text
     assert "RDS" not in spa_text
+
+
+# ── Item 15: workflow_worker pricing ─────────────────────────────────────────
+
+
+def test_workflow_worker_step_functions_is_cheap():
+    """Item #15: Step Functions Express at prototype scale (720 executions x
+    5 transitions) is essentially free -- priced at $0.10/mo as a conservative
+    round. Total for workflow_worker should be under $1/mo."""
+    from patterns import _CATALOG
+    from pricing import estimate
+
+    arch = _CATALOG["workflow_worker"]
+    result = estimate(arch)
+    services = [line.service for line in result.lines]
+    assert "Step Functions (Express)" in services
+    assert "Lambda" in services
+    sf_line = next(line for line in result.lines if line.service == "Step Functions (Express)")
+    assert sf_line.monthly_usd <= 0.10
+    # Total prototype cost must be cheap (Step Functions ~free + Lambda ~$0.10)
+    assert result.total_monthly_usd < 1.00

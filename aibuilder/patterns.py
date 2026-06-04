@@ -372,6 +372,59 @@ _CATALOG: dict[str, Architecture] = {
         ],
         notes=[
             "Alternative: ECS Fargate scheduled task if jobs run longer than 15 min.",
+            "Multi-step alternative: if your job has multiple stages with branching "
+            "or retry logic (or your repo uses Prefect / Dagster / Airflow DAGs), "
+            'use `pattern_override="workflow_worker"` instead — that adds Step '
+            "Functions Express to orchestrate between Lambda task workers.",
+            "Queue-driven alternative: if a web app or external service pushes "
+            "async jobs (rather than a schedule driving them), use "
+            '`pattern_override="queue_worker"` — that pattern uses SQS as the '
+            "trigger instead of EventBridge.",
+            _CLOUDWATCH_RETENTION_NOTE,
+        ],
+    ),
+    "workflow_worker": Architecture(
+        pattern="workflow_worker",
+        services=[
+            ArchitectureService(
+                aws_service="Step Functions (Express)",
+                purpose=(
+                    "Orchestrates your multi-step workflow. Express Workflows are "
+                    "the right default for high-throughput, short-duration jobs "
+                    "(≤ 5 min execution): ~100x cheaper than Standard Workflows "
+                    "and priced per state transition + execution duration rather "
+                    "than per execution count. Standard Workflows are the right "
+                    "choice for human-in-the-loop / approval flows or when you "
+                    "need exactly-once semantics and audit history beyond 5 min."
+                ),
+                sizing={"executions_per_month": 720, "transitions_per_execution": 5},
+            ),
+            ArchitectureService(
+                aws_service="Lambda",
+                purpose=(
+                    "Task workers invoked by Step Functions. Each step in your "
+                    "workflow maps to a Lambda task state; Step Functions handles "
+                    "the retry / catch / parallel branching in ASL (Amazon States "
+                    "Language) — your Lambda code stays simple."
+                ),
+                sizing={"memory_mb": 512, "duration_ms": 5000, "invocations_per_month": 720},
+            ),
+        ],
+        notes=[
+            "Express vs Standard: Express (this pattern) caps at 5 min total "
+            "execution time, uses at-least-once delivery, and costs ~$0.10/mo "
+            "at 720 executions x 5 transitions. Standard Workflows support "
+            "executions up to 1 year, exactly-once task execution, and a "
+            "built-in visual audit trail — choose Standard when you need "
+            "human approval steps or long-running coordination.",
+            "When to use workflow_worker vs worker vs queue_worker: "
+            "schedule-driven single-script job → `worker`; "
+            "multi-step job with branching / retry / parallel branches (or "
+            "repo uses Prefect / Dagster / Airflow) → `workflow_worker`; "
+            "web app pushes async jobs via a queue → `queue_worker`.",
+            "ASL (Amazon States Language) is JSON/YAML — Step Functions Visual "
+            "Workflow Studio in the AWS console lets you draw the state machine "
+            "and export valid ASL without writing it by hand.",
             _CLOUDWATCH_RETENTION_NOTE,
         ],
     ),
