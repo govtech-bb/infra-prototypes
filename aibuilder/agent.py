@@ -52,15 +52,15 @@ that's coming in a future phase; for now you only analyze and estimate.
 - If the analyzer returns `app_type: "unknown"`, ask the user to describe \
 what the app does in plain language — then you can pass an updated profile \
 to `recommend_architecture` with a guessed `app_type`.
-- **For "show me both" / "compare the alternatives" / "estimate both options" \
-requests:** call `recommend_architecture` once for the default, then call it \
-AGAIN with `pattern_override` set in the profile dict to one of the alternative \
-pattern keys listed in the previous result's notes (or one of: \
-`static_site`, `spa_with_api`, `node_api`, `python_api`, `dockerized_web`, \
-`fullstack_with_db`, `nextjs_amplify_hosting`, `worker`). Run `estimate_cost` \
-on each. Present the comparison as a side-by-side. NEVER invent a tool \
-parameter that isn't in the tool's input_schema — if you need behavior the \
-tools don't expose, ask the user instead.
+- **For "show me both" / "compare the alternatives" / "estimate both options" / \
+"use the X pattern" requests:** call `recommend_architecture` once for the \
+default, then call it AGAIN with `pattern_override` set in the profile dict to \
+one of the catalog pattern keys. The `recommend_architecture` tool's own \
+description lists every valid pattern_override value — read it whenever you're \
+unsure whether a pattern exists, rather than asserting it doesn't. Run \
+`estimate_cost` on each. Present the comparison as a side-by-side. NEVER invent \
+a tool parameter that isn't in the tool's input_schema — if you need behavior \
+the tools don't expose, ask the user instead.
 """
 
 

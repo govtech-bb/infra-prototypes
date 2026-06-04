@@ -177,6 +177,16 @@ def estimate_cost(architecture: dict, **_: Any) -> dict:
 # ── Tool registry ────────────────────────────────────────────────────────────
 
 
+def _catalog_pattern_keys_csv() -> str:
+    """Render the live catalog's pattern keys as a comma-separated string for
+    embedding in the tool description. Generated at import time so adding a
+    new pattern to _CATALOG automatically makes it discoverable to the agent —
+    no need to update this docstring separately and no risk of drift."""
+    from patterns import _CATALOG
+
+    return ", ".join(f"'{k}'" for k in _CATALOG)
+
+
 TOOL_DEFINITIONS = [
     {
         "name": "clone_repo",
@@ -221,13 +231,12 @@ TOOL_DEFINITIONS = [
             "named services with per-service purpose and sizing. Do NOT invent services — "
             "the returned services list is authoritative.\n\n"
             "To show an ALTERNATIVE pattern (e.g. user asks 'show me the Fargate "
-            "alternative' or 'estimate both options'): add `pattern_override` to the "
-            "profile dict with one of these exact catalog keys: 'static_site', "
-            "'spa_with_api', 'node_api', 'python_api', 'dockerized_web', "
-            "'fullstack_with_db', 'nextjs_amplify_hosting', 'worker'. When "
-            "pattern_override is set, the routing inference is skipped and the named "
-            "pattern is returned directly. Call recommend_architecture once per "
-            "pattern you want to compare, then estimate_cost on each."
+            "alternative' or 'estimate both options' or 'use the workflow_worker "
+            "pattern'): add `pattern_override` to the profile dict with one of these "
+            f"exact catalog keys: {_catalog_pattern_keys_csv()}. When pattern_override "
+            "is set, the routing inference is skipped and the named pattern is returned "
+            "directly. Call recommend_architecture once per pattern you want to compare, "
+            "then estimate_cost on each."
         ),
         "input_schema": {
             "type": "object",

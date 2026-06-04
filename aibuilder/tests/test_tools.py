@@ -221,6 +221,27 @@ def test_tool_definitions_shape():
         assert "input_schema" in t
 
 
+def test_recommend_tool_description_lists_every_catalog_pattern():
+    """Regression: a user asked the bot to use `workflow_worker` and the bot
+    refused because its tool description's hardcoded pattern list was stale —
+    the pattern existed in `_CATALOG` (and unit tests passed) but the agent
+    couldn't see it. Tool descriptions are now generated from `_CATALOG.keys()`
+    at import time. This test locks that contract: every catalog pattern must
+    be mentioned in the recommend_architecture tool description, with no
+    exceptions, so adding a new pattern automatically makes it discoverable."""
+    from patterns import _CATALOG
+    from tools import TOOL_DEFINITIONS
+
+    recommend_def = next(t for t in TOOL_DEFINITIONS if t["name"] == "recommend_architecture")
+    description = recommend_def["description"]
+    for pattern_key in _CATALOG:
+        assert f"'{pattern_key}'" in description, (
+            f"pattern '{pattern_key}' is in _CATALOG but not advertised in the "
+            f"recommend_architecture tool description — the agent won't know it "
+            f"can use it as a pattern_override"
+        )
+
+
 def test_execute_tool_dispatches():
     from tools import execute_tool
 
