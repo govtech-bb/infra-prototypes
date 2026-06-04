@@ -446,3 +446,94 @@ def test_worker_notes_mention_workflow_worker_alternative():
     arch = _CATALOG["worker"]
     notes_text = " | ".join(arch.notes)
     assert "workflow_worker" in notes_text
+
+
+# ── Item 16: queue_worker (SQS-triggered Lambda) ─────────────────────────────
+
+
+def test_queue_worker_pattern_has_sqs_and_lambda():
+    """Item #16: queue_worker must expose SQS and Lambda as its two services
+    -- in that order (the queue is the trigger, Lambda is the worker)."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["queue_worker"]
+    services = [s.aws_service for s in arch.services]
+    assert services == ["SQS", "Lambda"]
+    assert arch.pattern == "queue_worker"
+
+
+def test_queue_worker_notes_mention_dlq():
+    """Item #16: the dead-letter queue pattern is highly recommended and
+    must be surfaced in the notes -- without it poison messages loop forever."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["queue_worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "dead-letter" in notes_text.lower() or "DLQ" in notes_text
+
+
+def test_queue_worker_notes_mention_fifo_vs_standard():
+    """Item #16: Standard vs FIFO tradeoff must be explained -- the default
+    is Standard (at-least-once, best-effort ordering); FIFO is the upgrade
+    when order or exactly-once matters."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["queue_worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "FIFO" in notes_text
+    assert "Standard" in notes_text
+
+
+def test_queue_worker_notes_mention_partial_batch_responses():
+    """Item #16: partial batch failure handling (reportBatchItemFailures) is
+    a common gotcha -- without it a single bad message causes the whole batch
+    to retry. Must be present in the notes."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["queue_worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "batch" in notes_text.lower()
+    assert "partial" in notes_text.lower() or "reportBatchItemFailures" in notes_text
+
+
+def test_queue_worker_notes_when_to_use():
+    """Item #16: notes should explain when to pick queue_worker vs worker vs
+    workflow_worker -- the pattern is most useful for web-app-push-job shapes."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["queue_worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "worker" in notes_text.lower()
+    assert "workflow_worker" in notes_text
+
+
+def test_queue_worker_cloudwatch_retention_note():
+    """Item #16: queue_worker emits Lambda logs -- the retention note must
+    be present."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["queue_worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "retention" in notes_text.lower()
+
+
+def test_queue_worker_reachable_via_pattern_override():
+    """Item #16: pattern_override='queue_worker' must resolve through the
+    tool layer -- the agent uses this entrypoint to serve the pattern."""
+    from tools import recommend_architecture
+
+    result = recommend_architecture({"pattern_override": "queue_worker"})
+    assert result["pattern"] == "queue_worker"
+    services = [s["aws_service"] for s in result["services"]]
+    assert "SQS" in services
+    assert "Lambda" in services
+
+
+def test_worker_notes_mention_queue_worker_alternative():
+    """Item #16: existing worker pattern's notes must also point users toward
+    queue_worker for the async-job / web-app-push shape."""
+    from patterns import _CATALOG
+
+    arch = _CATALOG["worker"]
+    notes_text = " | ".join(arch.notes)
+    assert "queue_worker" in notes_text

@@ -84,6 +84,9 @@ _FALLBACK_PRICES: dict[str, tuple[float, str]] = {
         "~720 executions x 5 transitions/exec = 3,600 transitions ($1/M rate) -- "
         "effectively free at prototype scale; $0.10 is a conservative round",
     ),
+    # SQS Standard: first 1M requests/mo free. At prototype scale (100k messages)
+    # this is $0. FIFO queues are slightly more expensive but not modeled here.
+    "SQS": (0.00, "first 1M requests/mo are free; at prototype scale (100k messages) this is $0"),
 }
 
 # Per-service sizing/traffic assumptions. Only contribute to the user-facing

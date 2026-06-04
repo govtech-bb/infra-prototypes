@@ -156,3 +156,24 @@ def test_workflow_worker_step_functions_is_cheap():
     assert sf_line.monthly_usd <= 0.10
     # Total prototype cost must be cheap (Step Functions ~free + Lambda ~$0.10)
     assert result.total_monthly_usd < 1.00
+
+
+# ── Item 16: queue_worker pricing ────────────────────────────────────────────
+
+
+def test_queue_worker_sqs_is_free_at_prototype_scale():
+    """Item #16: SQS Standard first 1M requests/mo are free. At prototype
+    scale (100k messages) the SQS cost line should be $0. Total for
+    queue_worker should be under $1/mo (SQS $0 + Lambda ~$0.10)."""
+    from patterns import _CATALOG
+    from pricing import estimate
+
+    arch = _CATALOG["queue_worker"]
+    result = estimate(arch)
+    services = [line.service for line in result.lines]
+    assert "SQS" in services
+    assert "Lambda" in services
+    sqs_line = next(line for line in result.lines if line.service == "SQS")
+    assert sqs_line.monthly_usd == 0.00
+    # Total must stay cheap
+    assert result.total_monthly_usd < 1.00

@@ -418,13 +418,63 @@ _CATALOG: dict[str, Architecture] = {
             "built-in visual audit trail — choose Standard when you need "
             "human approval steps or long-running coordination.",
             "When to use workflow_worker vs worker vs queue_worker: "
-            "schedule-driven single-script job → `worker`; "
+            "schedule-driven single-script job -> `worker`; "
             "multi-step job with branching / retry / parallel branches (or "
-            "repo uses Prefect / Dagster / Airflow) → `workflow_worker`; "
-            "web app pushes async jobs via a queue → `queue_worker`.",
+            "repo uses Prefect / Dagster / Airflow) -> `workflow_worker`; "
+            "web app pushes async jobs via a queue -> `queue_worker`.",
             "ASL (Amazon States Language) is JSON/YAML — Step Functions Visual "
             "Workflow Studio in the AWS console lets you draw the state machine "
             "and export valid ASL without writing it by hand.",
+            _CLOUDWATCH_RETENTION_NOTE,
+        ],
+    ),
+    "queue_worker": Architecture(
+        pattern="queue_worker",
+        services=[
+            ArchitectureService(
+                aws_service="SQS",
+                purpose=(
+                    "Standard queue (not FIFO) that buffers jobs pushed by your "
+                    "web app or external service. SQS decouples the producer from "
+                    "the worker: the producer fires and forgets; the queue handles "
+                    "buffering, retries, and dead-lettering. First 1M "
+                    "requests/mo are free — at prototype scale this costs $0."
+                ),
+                sizing={"messages_per_month": 100_000},
+            ),
+            ArchitectureService(
+                aws_service="Lambda",
+                purpose=(
+                    "Worker triggered by SQS via an Event Source Mapping (ESM). "
+                    "Lambda polls the queue, batches up to 10 messages per "
+                    "invocation (configurable), and processes them. Failed "
+                    "messages are retried up to the queue's maxReceiveCount before "
+                    "moving to the dead-letter queue."
+                ),
+                sizing={"memory_mb": 512, "duration_ms": 5000, "invocations_per_month": 720},
+            ),
+        ],
+        notes=[
+            "When to pick this vs worker vs workflow_worker: "
+            "schedule-driven cron job -> `worker`; "
+            "multi-step orchestration with branching/retry -> `workflow_worker`; "
+            "web app (or external service) sends 'do this thing' messages -> "
+            "`queue_worker`.",
+            "Dead-letter queue (DLQ): configure a second SQS queue as the DLQ "
+            "and set maxReceiveCount (e.g. 3) on the main queue. Messages that "
+            "fail all retries land in the DLQ for inspection instead of "
+            "disappearing. This is highly recommended — without it, poison "
+            "messages loop forever.",
+            "Batch handling: Lambda receives up to 10 SQS records per invocation "
+            "by default. Enable reportBatchItemFailures on the ESM so Lambda can "
+            "report partial successes — without it, a single failed record in a "
+            "batch causes the entire batch to retry.",
+            "Standard vs FIFO: Standard queue (this pattern default) delivers "
+            "at-least-once with best-effort ordering — fine for most async jobs. "
+            "If strict ordering or exactly-once processing matters, switch to a "
+            "FIFO queue (.fifo suffix). FIFO has a different pricing model "
+            "(~$0.50/M requests vs $0.40/M) and a maximum throughput of "
+            "3,000 messages/sec with batching.",
             _CLOUDWATCH_RETENTION_NOTE,
         ],
     ),
