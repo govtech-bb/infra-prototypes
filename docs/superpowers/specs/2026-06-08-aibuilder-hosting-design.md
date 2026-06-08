@@ -46,7 +46,7 @@ We want a single shared URL teammates can hit, billed against a GovTech account,
                                 │
                                 ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  GovTech AWS account (sandbox-class — TBD pick at deploy)        │
+│  GovTech AWS account: govtech-sandbox (us-east-1)                │
 │                                                                  │
 │  Amazon ECR ─────────► aibuilder:latest, aibuilder:sha-<7chr>    │
 │       │                                                          │
@@ -366,8 +366,12 @@ These are explicit follow-up specs, not "TODO" rot:
 - **B6** (new) — **DynamoDB session store** to allow multi-task service (horizontal scaling beyond 1 task; current SQLite+EFS is single-writer).
 - **B7** (new) — **Live-pricing service expansion** is unrelated to hosting but worth tracking — independent commit cadence on `pricing.py`.
 
+## Deploy-time configuration (settled)
+
+- **AWS profile:** `govtech-sandbox` (`InfrastructureAdmin` role via the `govtech` SSO session, us-east-1).
+- **Repo:** `christophercorbin/infra-prototypes` (used in the GitHub OIDC trust policy).
+
 ## Open questions for the user
 
-1. **Which GovTech account?** Memory lists `govtech-alpha-prod` (production), `govtech-mgmt` / `govtech-log-archive` / `govtech-network-edge` (read-only). For a sandbox-class deployment, none of these fit. **Likely action: create or designate a new `govtech-sandbox` or `govtech-dev` account before deploy**, or override and use `govtech-alpha-prod` if no sandbox exists.
-2. **Bedrock model availability:** Claude Opus 4.6 must be enabled in the target account's Bedrock console before the task can call it. This is a one-time toggle (and may require AWS support ticket in some regions). Surface at deploy time.
-3. **GitHub Actions OIDC role:** the deploy role's trust policy needs the GitHub repo's identifier baked in. We're using `christophercorbin/infra-prototypes` — confirm at deploy time. (Trivial — just mentioning so it's not a surprise.)
+1. **Bedrock model availability:** Claude Opus 4.6 must be enabled in the `govtech-sandbox` account's Bedrock console before the task can call it (Bedrock → Model access → Manage model access). One-time toggle per account; sometimes requires a brief AWS support ticket if the model is gated. Surface at deploy time.
+2. **OIDC IdP first-time setup:** the `govtech-sandbox` account needs the GitHub OIDC IdP (`https://token.actions.githubusercontent.com`) registered once. The IaC stack creates it conditionally — first deploy will set it up, subsequent deploys are no-ops.
