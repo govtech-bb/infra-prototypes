@@ -1,0 +1,74 @@
+name: aibuilder deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'aibuilder/**'
+      - '.github/workflows/aibuilder-deploy.yml'
+  pull_request:
+    paths:
+      - 'aibuilder/**'
+
+permissions:
+  id-token: write   # required to request the OIDC token
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPO_NAME: aibuilder-sandbox
+  ECS_CLUSTER: aibuilder-sandbox
+  ECS_SERVICE: aibuilder-sandbox
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t aibuilder:test ./aibuilder
+      - name: Run `make check` inside the image
+        run: docker run --rm -v "${{ github.workspace }}/aibuilder:/aibuilder" aibuilder:test make check
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: <ROLE_ARN_PLACEHOLDER>
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build + push image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SHA_TAG: sha-${{ github.sha }}
+        run: |
+          IMG_LATEST=$ECR_REGISTRY/$ECR_REPO_NAME:latest
+          IMG_SHA=$ECR_REGISTRY/$ECR_REPO_NAME:${SHA_TAG:0:11}
+          docker build -t $IMG_LATEST -t $IMG_SHA ./aibuilder
+          docker push $IMG_LATEST
+          docker push $IMG_SHA
+
+      - name: Roll the ECS service
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
+
+      - name: Wait for stable
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE \
+            --region $AWS_REGION
