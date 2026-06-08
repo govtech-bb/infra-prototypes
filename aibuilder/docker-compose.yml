@@ -1,0 +1,28 @@
+services:
+  aibuilder:
+    build: .
+    ports:
+      - "8001:8001"
+    volumes:
+      - .:/aibuilder                       # code reload
+      - aibuilder_data:/aibuilder/data     # SQLite persists across `down`
+      - ~/.aws:/root/.aws:ro               # SSO cache for boto3 (read-only)
+    environment:
+      - AWS_PROFILE=${AWS_PROFILE:-govtech-sandbox}
+      - AWS_REGION=us-east-1
+      - AIBUILDER_TOKEN=${AIBUILDER_TOKEN:-}
+      - AIBUILDER_BEDROCK_MODEL=${AIBUILDER_BEDROCK_MODEL:-anthropic.claude-opus-4-6-v1:0}
+    # Override the immutable image's CMD with hot-reload uvicorn for local dev
+    command:
+      - "python3"
+      - "-m"
+      - "uvicorn"
+      - "app:app"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8001"
+      - "--reload"
+
+volumes:
+  aibuilder_data:
