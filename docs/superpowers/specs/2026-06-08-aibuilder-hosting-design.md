@@ -60,10 +60,17 @@ We want a single shared URL teammates can hit, billed against a GovTech account,
 │         ├─► EFS mount at /aibuilder/data/sessions.db             │
 │         └─► CloudWatch Logs (7-day retention)                    │
 │                                                                  │
-│  Application Load Balancer (public-facing)                       │
-│    ├─► HTTPS:443 via ACM cert                                    │
+│  Application Load Balancer (internal-facing on port 80 — TLS     │
+│  terminates upstream at CloudFront)                              │
 │    ├─► Health check on GET /api/health                           │
-│    └─► Forwards :443 → ECS task :8001                            │
+│    └─► Forwards :80 → ECS task :8001                             │
+│                                                                  │
+│  CloudFront distribution (HTTPS front door)                      │
+│    ├─► Default URL: d<random>.cloudfront.net (free AWS-managed   │
+│    │   cert — no custom domain needed for MVP)                   │
+│    ├─► Origin: the ALB (HTTP)                                    │
+│    └─► Origin-request policy: forwards Authorization header so   │
+│        bearer-token auth still works at the FastAPI middleware   │
 │                                                                  │
 │  SSM Parameter Store: /aibuilder/auth-token (SecureString)       │
 │       └─► injected as AIBUILDER_TOKEN env var via ECS secrets    │
@@ -143,10 +150,18 @@ Local dev requires `aws sso login --sso-session personal` (or `govtech`) active 
 ### 5. Application Load Balancer + listener + target group
 
 - ALB scheme: `internet-facing`, 2 public subnets across 2 AZs (same VPC as Fargate).
-- Listener: 443 HTTPS using an ACM cert. Default action: forward to target group.
-- Listener: 80 HTTP → permanent redirect to 443.
+- Listener: 80 HTTP only. Default action: forward to target group. (TLS is handled at the CloudFront layer in front — see §5b. ALB stays HTTP because we'd otherwise need to provision an ACM cert, which requires a domain we own; MVP avoids that entirely.)
 - Target group: type `ip`, port 8001, health check `GET /api/health` expecting 200.
-- ACM cert: provisioned in the same region (us-east-1), validated via DNS. The cert is for the ALB's auto-generated DNS name for MVP — when we add a custom domain later, a new cert covers `*.govtech.bb` or similar.
+
+### 5b. CloudFront distribution (HTTPS front door)
+
+- Single distribution with one origin (the ALB), one default cache behavior (no caching — `MinTTL=0, DefaultTTL=0, MaxTTL=0`).
+- Default domain: `d<random>.cloudfront.net`, served with an AWS-managed certificate. Browsers see valid HTTPS without us owning a domain.
+- Viewer protocol policy: `redirect-to-https`. Origin protocol policy: `http-only` (CloudFront → ALB is plain HTTP inside AWS — fine).
+- Origin request policy: forwards the `Authorization` header (and `Host` header) to the ALB so bearer-token auth still works at the FastAPI middleware.
+- WAF: not attached for MVP (a follow-up — see deferred items).
+- Logging: disabled for MVP (CloudFront access logs go to S3 if enabled; not worth the bucket setup at prototype scale).
+- When we add a custom domain later, this distribution gains an alternate domain name + ACM cert in `us-east-1`. The ALB stays HTTP-only behind it.
 
 ### 6. EFS file system (session persistence)
 
@@ -323,13 +338,14 @@ Auth from GitHub to AWS: configure a GitHub OIDC IdP in the AWS account once, th
 |---|---|---|
 | ECS Fargate | $9.00 | 0.25 vCPU / 0.5 GB, 24/7 |
 | Application Load Balancer | $16.00 | Fixed + negligible LCU |
+| CloudFront | $0.50 | ~5 GB out / ~100k requests (free tier covers most of this) |
 | ECR | $0.10 | ~1 GB stored; first 500 MB free |
 | EFS Standard | $0.30 | <1 GB sessions data, Bursting |
 | CloudWatch Logs | <$1.00 | 7-day retention, prototype traffic |
-| ACM cert | $0.00 | Free for AWS-issued certs on ALB |
+| ACM cert | $0.00 | CloudFront's default `*.cloudfront.net` cert is free |
 | SSM Parameter Store | $0.00 | Standard tier free |
 | Data transfer out | $1.00 | A few GB/mo egress for chat responses |
-| **Subtotal: AWS infra** | **~$27/mo** | |
+| **Subtotal: AWS infra** | **~$28/mo** | |
 | Bedrock (Claude Opus 4.6) | metered | ~$15/1M input tokens, ~$75/1M output (per current Bedrock pricing). At low team usage probably $5–30/mo. |
 | **Total estimate** | **~$30–60/mo** | infra + Bedrock at light-to-moderate usage |
 
