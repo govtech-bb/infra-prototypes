@@ -1,13 +1,13 @@
 """Cost estimator.
 
 v1: uses a curated fallback table only.
-v1.5 (Phase 1.5): adds live AWS Pricing API lookups for Lambda. The
-`is_fallback` field on CostEstimate is now meaningful:
+v1.5 (Phase 1.5): adds live AWS Pricing API lookups. The `is_fallback`
+field on CostEstimate is now meaningful:
   - False: at least one service price came from the live Pricing API.
   - True: every price came from the static fallback table (or the service
     was unrecognised and returned $0).
 
-Currently only Lambda is live-priced. All other services use the static
+Currently live-priced: Lambda, S3. All other services use the static
 fallback table. To add live pricing for service X, write a
 `_live_price_x()` function that returns ``(monthly_usd, note)`` on
 success or ``None`` on any error, then register it in ``_LIVE_RESOLVERS``.
@@ -251,12 +251,51 @@ def _extract_price_per_unit(response: dict) -> float | None:
     return None
 
 
+def _live_price_s3() -> tuple[float, str] | None:
+    """Query the AWS Pricing API for S3 Standard storage in us-east-1.
+
+    Returns (monthly_usd, note) for our prototype baseline (1 GB stored) or
+    None on any error. GET request cost (~$0.004 at 10k requests/mo) is
+    sub-cent and rounded away — storage dominates at this scale.
+
+    Looks up the General Purpose / Standard volumeType SKU, which is the
+    first-tier ($0.023/GB-month for the first 50 TB) S3 Standard price.
+    """
+    try:
+        client = boto3.client("pricing", region_name="us-east-1")
+        response = client.get_products(
+            ServiceCode="AmazonS3",
+            Filters=[
+                {"Type": "TERM_MATCH", "Field": "regionCode", "Value": "us-east-1"},
+                {"Type": "TERM_MATCH", "Field": "productFamily", "Value": "Storage"},
+                {"Type": "TERM_MATCH", "Field": "volumeType", "Value": "Standard"},
+                {"Type": "TERM_MATCH", "Field": "storageClass", "Value": "General Purpose"},
+            ],
+            MaxResults=10,
+        )
+        storage_price = _extract_price_per_unit(response)
+        if storage_price is None:
+            logger.warning("pricing: S3 live lookup returned None")
+            return None
+
+        # 1 GB stored * storage_price per GB-month
+        total = 1.0 * storage_price
+        today = datetime.now(tz=UTC).date()
+        note = f"live: ~1 GB stored at S3 Standard us-east-1 (queried {today})"
+        return (round(total, 2), note)
+
+    except (BotoCoreError, ClientError, Exception):
+        logger.warning("pricing: S3 live lookup failed", exc_info=True)
+        return None
+
+
 # Registry of live resolvers. Keys must match the service strings used in
 # _FALLBACK_PRICES and Architecture.services[].aws_service.
 # To add live pricing for a new service, write `_live_price_<name>()` and
 # add an entry here. No other code changes are needed.
 _LIVE_RESOLVERS: dict[str, Callable[[], tuple[float, str] | None]] = {
     "Lambda": _live_price_lambda,
+    "S3": _live_price_s3,
 }
 
 

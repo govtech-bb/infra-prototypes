@@ -332,20 +332,79 @@ def test_live_resolver_is_cached_per_process():
     assert boto_patch.call_count == 1
 
 
-def test_static_site_remains_fallback_with_live_lambda_resolver_present():
-    """Phase 1.5: patterns that don't include Lambda (e.g. static_site = S3 +
-    CloudFront) should still get is_fallback=True because no live resolver
-    covers those services yet."""
+def test_mixed_live_and_fallback_marks_is_fallback_false():
+    """Phase 1.5: when SOME services in an architecture get live prices (e.g.
+    S3) and others fall back (e.g. CloudFront, which has no live resolver
+    yet), `is_fallback` should be False — at least one line came from the
+    live API. Replaces the old static_site-all-fallback test which became
+    obsolete once S3 got a live resolver."""
     import pricing
 
     pricing._LIVE_PRICE_CACHE.clear()
 
-    arch = recommend(RepoProfile(app_type="static_site"))
-    # No need to mock boto3 -- the live resolvers for S3/CloudFront don't exist,
-    # so boto3 is never called for a static_site estimate.
+    arch = recommend(RepoProfile(app_type="static_site"))  # S3 + CloudFront
+
+    # Mock boto3 to return a valid S3 price ($0.023/GB-month). S3 is the
+    # only service in this architecture with a live resolver, so the mock
+    # is called once.
+    client_mock = MagicMock()
+    client_mock.get_products.return_value = _make_pricing_response("0.023")
+    with patch("pricing.boto3.client", return_value=client_mock):
+        result = estimate(arch)
+
+    assert result.is_fallback is False  # S3 went live -> not all-fallback
+    s3_line = next(line for line in result.lines if line.service == "S3")
+    assert "live" in s3_line.note or "queried" in s3_line.note
+    # CloudFront stays on the static fallback table.
+    cf_line = next(line for line in result.lines if line.service == "CloudFront")
+    assert "live" not in cf_line.note and "queried" not in cf_line.note
+
+
+# ── S3 live pricing ──────────────────────────────────────────────────────────
+
+
+def test_live_s3_price_used_when_api_responds():
+    """When the Pricing API returns a valid S3 storage rate, the S3 cost line
+    note contains 'live' or 'queried' and is_fallback is False."""
+    import pricing
+
+    pricing._LIVE_PRICE_CACHE.clear()
+
+    arch = Architecture(
+        pattern="static_site",
+        services=[ArchitectureService("S3", "stores assets", {})],
+    )
+
+    client_mock = MagicMock()
+    # 1 GB * $0.023/GB-month = $0.023 -> round(0.023, 2) = $0.02
+    client_mock.get_products.return_value = _make_pricing_response("0.023")
+    with patch("pricing.boto3.client", return_value=client_mock):
+        result = estimate(arch)
+
+    s3_line = next(line for line in result.lines if line.service == "S3")
+    assert "live" in s3_line.note or "queried" in s3_line.note
+    assert s3_line.monthly_usd == 0.02  # round(1.0 * 0.023, 2)
+    assert result.is_fallback is False
+
+
+def test_s3_falls_back_when_pricing_api_raises():
+    """When the Pricing API raises, the S3 line still has a price (from the
+    static fallback table) and is_fallback is True."""
+    import pricing
+
+    pricing._LIVE_PRICE_CACHE.clear()
+
+    arch = Architecture(
+        pattern="static_site",
+        services=[ArchitectureService("S3", "stores assets", {})],
+    )
+
+    # The autouse fixture already makes boto3.client raise -- no need to
+    # add our own patch. We just clear the cache and let the default
+    # behaviour take over.
     result = estimate(arch)
 
+    s3_line = next(line for line in result.lines if line.service == "S3")
+    # Fallback table has S3 at $0.10
+    assert s3_line.monthly_usd == 0.10
     assert result.is_fallback is True
-    services = [line.service for line in result.lines]
-    assert "S3" in services
-    assert "CloudFront" in services
