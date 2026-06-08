@@ -21,7 +21,7 @@ client = anthropic.AnthropicBedrock(
 _DB_PATH = Path(os.environ.get("AIBUILDER_DB", Path(__file__).parent / "data" / "sessions.db"))
 store = SqliteSessionStore(_DB_PATH)
 
-_AUTH_TOKEN = os.environ.get("AIBUILDER_TOKEN")
+_AUTH_TOKEN = os.environ.get("AIBUILDER_TOKEN") or None
 # Paths that are always open (no auth required), checked as prefixes
 _OPEN_PREFIXES = ("/api/health", "/static/")
 # Paths that are always open, checked as exact matches
