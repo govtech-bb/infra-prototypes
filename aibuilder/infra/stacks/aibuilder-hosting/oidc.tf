@@ -42,10 +42,14 @@ resource "aws_iam_role" "github_deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
-          # Trust only main branch + PRs in the configured repo.
+          # Trust ONLY pushes to main. PRs deliberately excluded — the
+          # workflow's test job runs `make check` inside Docker and needs
+          # zero AWS permissions, so giving PRs the ability to assume this
+          # role would just be a footgun (a malicious PR could modify the
+          # workflow to call ECS / ECR APIs and bypass the `if:` gate on
+          # the deploy job).
           "token.actions.githubusercontent.com:sub" = [
             "repo:${var.github_repo}:ref:refs/heads/main",
-            "repo:${var.github_repo}:pull_request",
           ]
         }
       }
