@@ -15,7 +15,9 @@ from agent import run_agent_loop
 from sessions import Session, SqliteSessionStore
 
 app = FastAPI(title="aibuilder")
-client = anthropic.Anthropic()
+client = anthropic.AnthropicBedrock(
+    aws_region=os.environ.get("AWS_REGION", "us-east-1"),
+)
 _DB_PATH = Path(os.environ.get("AIBUILDER_DB", Path(__file__).parent / "data" / "sessions.db"))
 store = SqliteSessionStore(_DB_PATH)
 

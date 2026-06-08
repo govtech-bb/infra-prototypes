@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import anthropic
+
+MODEL_ID = os.environ.get("AIBUILDER_BEDROCK_MODEL", "anthropic.claude-opus-4-6-v1:0")
 
 from sessions import Session
 from tools import TOOL_DEFINITIONS, execute_tool
@@ -68,10 +71,10 @@ def _serialize_content(blocks: list[Any]) -> list[dict]:
     return [b.model_dump() for b in blocks]
 
 
-def run_agent_loop(client: anthropic.Anthropic, session: Session) -> str:
+def run_agent_loop(client: anthropic.AnthropicBedrock, session: Session) -> str:
     for _ in range(MAX_AGENT_ITERATIONS):
         response = client.messages.create(
-            model="claude-opus-4-6",
+            model=MODEL_ID,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             tools=TOOL_DEFINITIONS,

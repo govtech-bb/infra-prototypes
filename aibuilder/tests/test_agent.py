@@ -53,3 +53,23 @@ def test_agent_stops_at_iteration_limit():
     session = Session(session_id="s1")
     reply = run_agent_loop(client, session)
     assert "iteration limit" in reply.lower()
+
+
+def test_model_id_reads_from_env(monkeypatch):
+    monkeypatch.setenv("AIBUILDER_BEDROCK_MODEL", "anthropic.claude-test-model:0")
+    import importlib
+
+    import agent as agent_module
+
+    importlib.reload(agent_module)
+    assert agent_module.MODEL_ID == "anthropic.claude-test-model:0"
+
+
+def test_model_id_default_is_claude_opus_46(monkeypatch):
+    monkeypatch.delenv("AIBUILDER_BEDROCK_MODEL", raising=False)
+    import importlib
+
+    import agent as agent_module
+
+    importlib.reload(agent_module)
+    assert agent_module.MODEL_ID == "anthropic.claude-opus-4-6-v1:0"
