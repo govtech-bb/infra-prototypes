@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local runtime / state
+data/
+tmp/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Docker artifacts that shouldn't go into the image
+docker-compose.yml
+Dockerfile
+.dockerignore
