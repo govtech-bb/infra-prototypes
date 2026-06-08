@@ -453,6 +453,21 @@
 </div>
 
 <script>
+  // ── Auth helpers ───────────────────────────────────────────────────────────
+  function getAuthToken() {
+    let token = localStorage.getItem('aibuilder_token');
+    if (!token) {
+      token = prompt('Bearer token for aibuilder (one-time, stored in localStorage):');
+      if (token) localStorage.setItem('aibuilder_token', token);
+    }
+    return token || '';
+  }
+
+  function authHeaders() {
+    const token = getAuthToken();
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+  }
+
   // ── State ──────────────────────────────────────────────────────────────────
   let sessionId = null;
   let isLoading = false;
@@ -463,7 +478,7 @@
 
   // ── Session init ───────────────────────────────────────────────────────────
   async function init() {
-    const res  = await fetch('/api/session');
+    const res  = await fetch('/api/session', { headers: authHeaders() });
     const data = await res.json();
     sessionId  = data.session_id;
 
@@ -503,9 +518,17 @@
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ session_id: sessionId, message: text })
       });
+
+      if (res.status === 401) {
+        localStorage.removeItem('aibuilder_token');
+        typingEl.remove();
+        alert('Bearer token rejected. Refresh the page to enter a new one.');
+        return;
+      }
+
       const data = await res.json();
 
       typingEl.remove();
