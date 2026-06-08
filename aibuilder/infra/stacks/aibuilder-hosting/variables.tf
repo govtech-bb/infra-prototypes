@@ -25,7 +25,7 @@ variable "image_tag" {
 variable "bedrock_model_id" {
   description = "Bedrock model ID for the AIBUILDER_BEDROCK_MODEL env var injected into the task."
   type        = string
-  default     = "anthropic.claude-opus-4-6-v1:0"
+  default     = "us.anthropic.claude-opus-4-6-v1"
 }
 
 variable "github_repo" {

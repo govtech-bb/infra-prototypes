@@ -12,7 +12,7 @@ from sessions import Session
 from tools import TOOL_DEFINITIONS, execute_tool
 
 MAX_AGENT_ITERATIONS = 15
-MODEL_ID = os.environ.get("AIBUILDER_BEDROCK_MODEL", "anthropic.claude-opus-4-6-v1:0")
+MODEL_ID = os.environ.get("AIBUILDER_BEDROCK_MODEL", "us.anthropic.claude-opus-4-6-v1")
 
 SYSTEM_PROMPT = """You are aibuilder — a friendly AWS architecture assistant. \
 A user gives you a public GitHub repo URL. You figure out what the app is, \

@@ -53,6 +53,17 @@ resource "aws_iam_role" "task" {
   })
 }
 
+locals {
+  # Strip the `us.`/`global.`/`eu.`/`apac.` inference-profile prefix to get
+  # the underlying foundation-model ID for IAM resource ARNs.
+  bedrock_foundation_model_id = replace(var.bedrock_model_id, "/^(us|global|eu|apac)\\./", "")
+
+  # When invoking a `us.` cross-region inference profile, Bedrock may route
+  # the actual call to any of these regions — the task role needs
+  # foundation-model permission in all of them, not just var.aws_region.
+  bedrock_invoke_regions = ["us-east-1", "us-east-2", "us-west-2"]
+}
+
 resource "aws_iam_role_policy" "task_bedrock" {
   name = "${local.name}-task-bedrock"
   role = aws_iam_role.task.id
@@ -65,11 +76,15 @@ resource "aws_iam_role_policy" "task_bedrock" {
         "bedrock:InvokeModel",
         "bedrock:InvokeModelWithResponseStream",
       ]
-      # us-east-1 + us-west-2 are common Bedrock regions. Scope here
-      # to us-east-1 specifically since that's our region.
-      Resource = [
-        "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}",
-      ]
+      Resource = concat(
+        [
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_model_id}",
+        ],
+        [
+          for r in local.bedrock_invoke_regions :
+          "arn:aws:bedrock:${r}::foundation-model/${local.bedrock_foundation_model_id}"
+        ],
+      )
     }]
   })
 }

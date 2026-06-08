@@ -72,4 +72,4 @@ def test_model_id_default_is_claude_opus_46(monkeypatch):
     import agent as agent_module
 
     importlib.reload(agent_module)
-    assert agent_module.MODEL_ID == "anthropic.claude-opus-4-6-v1:0"
+    assert agent_module.MODEL_ID == "us.anthropic.claude-opus-4-6-v1"

@@ -11,7 +11,7 @@ services:
       - AWS_PROFILE=${AWS_PROFILE:-govtech-sandbox}
       - AWS_REGION=us-east-1
       - AIBUILDER_TOKEN=${AIBUILDER_TOKEN:-}
-      - AIBUILDER_BEDROCK_MODEL=${AIBUILDER_BEDROCK_MODEL:-anthropic.claude-opus-4-6-v1:0}
+      - AIBUILDER_BEDROCK_MODEL=${AIBUILDER_BEDROCK_MODEL:-us.anthropic.claude-opus-4-6-v1}
     # Override the immutable image's CMD with hot-reload uvicorn for local dev
     command:
       - "python3"
