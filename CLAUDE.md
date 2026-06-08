@@ -222,6 +222,6 @@ Plans shipped for **aibuilder**: Phase 1 — repo analysis + AWS cost estimate (
 ## Test count baseline
 
 - `cd deploy-agent && make check` → **67 tests passing**.
-- `cd aibuilder && make check` → **45 tests passing**.
+- `cd aibuilder && make check` → **107 tests passing**.
 
 New work should grow these counts, not shrink them.
