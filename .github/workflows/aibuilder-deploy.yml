@@ -40,7 +40,7 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: <ROLE_ARN_PLACEHOLDER>
+          role-to-assume: arn:aws:iam::672203047922:role/aibuilder-sandbox-github-deploy
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
