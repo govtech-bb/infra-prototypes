@@ -31,5 +31,5 @@ variable "bedrock_model_id" {
 variable "github_repo" {
   description = "GitHub repository (owner/name) allowed to assume the deploy role via OIDC."
   type        = string
-  default     = "christophercorbin/infra-prototypes"
+  default     = "govtech-bb/infra-prototypes"
 }
