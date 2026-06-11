@@ -11,8 +11,8 @@ resource "aws_ecs_task_definition" "aibuilder" {
   family                   = local.name
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"  # 0.25 vCPU
-  memory                   = "512"  # 0.5 GB
+  cpu                      = "256" # 0.25 vCPU
+  memory                   = "512" # 0.5 GB
   execution_role_arn       = aws_iam_role.task_execution.arn
   task_role_arn            = aws_iam_role.task.arn
 

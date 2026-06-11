@@ -20,8 +20,8 @@ locals {
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.github_oidc_provider_arn != "" ? 0 : 1
 
-  url             = local.github_oidc_url
-  client_id_list  = ["sts.amazonaws.com"]
+  url            = local.github_oidc_url
+  client_id_list = ["sts.amazonaws.com"]
   # GitHub's OIDC thumbprint — AWS docs publish this list; current as of 2024.
   # AWS ignores the thumbprint for token.actions.githubusercontent.com (it is
   # in their allowlist), so this value is cosmetic but must be present.
@@ -95,8 +95,8 @@ resource "aws_iam_role_policy" "github_deploy" {
         Resource = aws_ecs_service.aibuilder.id
       },
       {
-        Effect = "Allow"
-        Action = ["ecs:DescribeTaskDefinition"]
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTaskDefinition"]
         Resource = "*"
       },
     ]
