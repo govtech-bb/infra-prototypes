@@ -31,7 +31,7 @@ def test_blocks_when_global_cap_reached(monkeypatch, store):
     monkeypatch.setenv("AIBUILDER_MAX_DEPLOYS_PER_SESSION_DAY", "100")
     monkeypatch.setenv("AIBUILDER_MAX_DEPLOYS_GLOBAL_DAY", "2")
     for i in range(2):
-        store.create("s1", "u", "static_site", f"p{i}", "e", ttl_days=14)
+        store.create(f"s{i}", "u", "static_site", f"p{i}", "e", ttl_days=14)
     err = check_caps(store, session_id="other")
     assert err is not None
     assert "daily" in err["summary"].lower() or "global" in err["summary"].lower()
