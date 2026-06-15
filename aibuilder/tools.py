@@ -287,3 +287,81 @@ def execute_tool(name: str, args: dict, *, session_id: str, session: Any) -> dic
     if fn is None:
         return {"summary": f"Unknown tool: {name}", "details": ""}
     return fn(**args, session_id=session_id, session=session)
+
+
+# ── Deploy tool ──────────────────────────────────────────────────────────────
+
+import asyncio  # noqa: E402
+
+from deploy_stacks import get_spec, not_deployable_message  # noqa: E402
+from deployments import SqliteDeploymentStore  # noqa: E402
+from limits import check_caps  # noqa: E402
+
+# Wired by app.py at startup so tools can reach the global store + queue.
+_STORE: SqliteDeploymentStore | None = None
+_JOB_QUEUE = None
+_TTL_DAYS_DEFAULT = 14
+
+
+def configure(store: SqliteDeploymentStore, job_queue) -> None:
+    """Called from app.py's lifespan to wire singletons into the tools module."""
+    global _STORE, _JOB_QUEUE
+    _STORE = store
+    _JOB_QUEUE = job_queue
+
+
+def deploy_repo(
+    github_url: str,
+    pattern: str,
+    project_name: str,
+    env: str = "proto",
+    knobs: dict | None = None,
+    *,
+    session_id: str,
+    session=None,
+    **_: Any,
+) -> dict:
+    if _STORE is None:
+        return {"summary": "Deploy engine not initialized.", "details": "store unset"}
+    if get_spec(pattern) is None:
+        return {"summary": not_deployable_message(pattern), "details": f"pattern={pattern}"}
+    cap_err = check_caps(_STORE, session_id=session_id)
+    if cap_err:
+        return cap_err
+
+    d = _STORE.create(
+        session_id=session_id,
+        repo_url=github_url,
+        pattern=pattern,
+        project_name=project_name,
+        env=env,
+        ttl_days=_TTL_DAYS_DEFAULT,
+    )
+    d.knobs = knobs or {}
+    _STORE.save(d)
+
+    from jobs_runtime import run_deploy_job  # late import to avoid cycle
+
+    async def _job():
+        await run_deploy_job(d.deployment_id)
+
+    coro = _JOB_QUEUE.enqueue(_job)
+    # Schedule on the running loop (production); if no loop is running
+    # (synchronous test context), discard the coroutine safely.
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(coro)  # noqa: RUF006
+    except RuntimeError:
+        # No running event loop — close the coroutine to suppress
+        # "coroutine was never awaited" warnings in sync test contexts.
+        if hasattr(coro, "close"):
+            coro.close()
+
+    return {
+        "deployment_id": d.deployment_id,
+        "status": d.status.value,
+        "message": (
+            f"Deployment {d.deployment_id} queued. Ask me 'how is the deploy going?' "
+            "or check `get_deployment_status` for live updates."
+        ),
+    }
