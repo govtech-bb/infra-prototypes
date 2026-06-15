@@ -124,3 +124,29 @@ resource "aws_iam_role_policy" "task_efs" {
     }]
   })
 }
+
+resource "aws_iam_role_policy" "task_deploy_state" {
+  name = "${local.name}-task-deploy-state"
+  role = aws_iam_role.task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.deploy_state.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.deploy_state.arn}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+        Resource = aws_dynamodb_table.deploy_lock.arn
+      },
+    ]
+  })
+}
