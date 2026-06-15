@@ -35,6 +35,7 @@ _ERROR_PATTERNS: list[tuple[str, str]] = [
 
 
 def classify_error(stderr: str) -> dict:
+    """Map raw stderr to a {summary, details} dict for the agent to surface."""
     details = stderr[-2000:]
     for pattern, summary in _ERROR_PATTERNS:
         if re.search(pattern, stderr, re.IGNORECASE):
