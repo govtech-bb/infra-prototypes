@@ -1,9 +1,7 @@
 # aibuilder/tests/test_gh_clone.py
 from unittest.mock import patch
 
-import pytest
-
-from gh_clone import clone, _scrub_token
+from gh_clone import _scrub_token, clone
 
 
 def test_scrub_strips_token_from_url():
@@ -56,7 +54,7 @@ def test_clone_private_retries_with_token(tmp_path, monkeypatch):
         return CompletedProcess(cmd, 0, "", "")
 
     with patch("gh_clone.subprocess.run", side_effect=fake_run):
-        path, err = clone("https://github.com/govtech-bb/private", tmp_path)
+        _path, err = clone("https://github.com/govtech-bb/private", tmp_path)
     assert err is None
     assert len(calls) == 2
     # First call uses bare URL; second injects token

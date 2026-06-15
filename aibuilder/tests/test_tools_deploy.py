@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -100,7 +100,7 @@ def test_list_deployments_includes_ttl_remaining(store, monkeypatch):
 
     monkeypatch.setattr("tools._STORE", store)
     d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
-    d.expires_at = datetime.now(timezone.utc) + timedelta(days=2)
+    d.expires_at = datetime.now(UTC) + timedelta(days=2)
     store.save(d)
     out = list_deployments(session_id="s", session=None)
     rows = out["deployments"]
@@ -186,7 +186,7 @@ def test_extend_resets_clock(store, monkeypatch):
     monkeypatch.setattr("tools._STORE", store)
     d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
     d.status = DeploymentStatus.LIVE
-    d.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    d.expires_at = datetime.now(UTC) + timedelta(hours=1)
     store.save(d)
     out = extend_deployment(deployment_id=d.deployment_id, session_id="s", session=None)
     assert out["ttl_hours_remaining"] > 200  # 14 days = 336h

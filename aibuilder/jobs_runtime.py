@@ -86,8 +86,14 @@ async def run_deploy_job(deployment_id: str) -> None:
         "TF_DATA_DIR": str(work / "tf"),
     }
     init = subprocess.run(
-        ["tofu", "init", "-input=false", "-reconfigure",
-         f"-backend-config=key={state_key}", *_backend_config_args()],
+        [
+            "tofu",
+            "init",
+            "-input=false",
+            "-reconfigure",
+            f"-backend-config=key={state_key}",
+            *_backend_config_args(),
+        ],
         cwd=spec.stack_dir,
         capture_output=True,
         text=True,
@@ -152,7 +158,9 @@ async def sync_content(d: Deployment, repo_path: Path) -> dict | None:
                 key = str(p.relative_to(repo_path))
                 content_type, _ = mimetypes.guess_type(str(p))
                 s3.upload_file(
-                    str(p), bucket, key,
+                    str(p),
+                    bucket,
+                    key,
                     ExtraArgs={"ContentType": content_type or "application/octet-stream"},
                 )
             if distribution:
@@ -178,6 +186,7 @@ async def run_redeploy_job(deployment_id: str) -> None:
     work = _workdir(deployment_id)
     if (work / "src").exists():
         import shutil
+
         shutil.rmtree(work / "src")
     repo_path, err = gh_clone.clone(d.repo_url, work / "src")
     if err:
@@ -204,16 +213,30 @@ async def run_modify_job(deployment_id: str) -> None:
     env = {**os.environ, "TF_DATA_DIR": str(work / "tf")}
     state_key = f"deployments/{d.project_name}-{d.env}.tfstate"
     init = subprocess.run(
-        ["tofu", "init", "-input=false", "-reconfigure",
-         f"-backend-config=key={state_key}", *_backend_config_args()],
-        cwd=spec.stack_dir, capture_output=True, text=True, env=env, timeout=180,
+        [
+            "tofu",
+            "init",
+            "-input=false",
+            "-reconfigure",
+            f"-backend-config=key={state_key}",
+            *_backend_config_args(),
+        ],
+        cwd=spec.stack_dir,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=180,
     )
     if init.returncode != 0:
         _update(d, DeploymentStatus.FAILED, classify_error(init.stderr)["details"])
         return
     apply_res = subprocess.run(
         ["tofu", "apply", "-auto-approve", "-input=false", *_var_args(spec, d)],
-        cwd=spec.stack_dir, capture_output=True, text=True, env=env, timeout=900,
+        cwd=spec.stack_dir,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=900,
     )
     if apply_res.returncode != 0:
         _update(d, DeploymentStatus.FAILED, classify_error(apply_res.stderr)["details"])
@@ -242,16 +265,30 @@ async def run_destroy_job(deployment_id: str) -> None:
     env = {**os.environ, "TF_DATA_DIR": str(work / "tf")}
     state_key = f"deployments/{d.project_name}-{d.env}.tfstate"
     init = subprocess.run(
-        ["tofu", "init", "-input=false", "-reconfigure",
-         f"-backend-config=key={state_key}", *_backend_config_args()],
-        cwd=spec.stack_dir, capture_output=True, text=True, env=env, timeout=180,
+        [
+            "tofu",
+            "init",
+            "-input=false",
+            "-reconfigure",
+            f"-backend-config=key={state_key}",
+            *_backend_config_args(),
+        ],
+        cwd=spec.stack_dir,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=180,
     )
     if init.returncode != 0:
         _update(d, DeploymentStatus.FAILED, classify_error(init.stderr)["details"])
         return
     destroy_res = subprocess.run(
         ["tofu", "destroy", "-auto-approve", "-input=false", *_var_args(spec, d)],
-        cwd=spec.stack_dir, capture_output=True, text=True, env=env, timeout=600,
+        cwd=spec.stack_dir,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=600,
     )
     if destroy_res.returncode != 0:
         _update(d, DeploymentStatus.FAILED, classify_error(destroy_res.stderr)["details"])

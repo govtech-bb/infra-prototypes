@@ -1,7 +1,7 @@
 # aibuilder/tests/test_static_website_spec.py
-from deployments import Deployment, DeploymentStatus
-from deploy_stacks import get_spec
 import deploy_stacks.static_website  # noqa: F401  (registers on import)
+from deploy_stacks import get_spec
+from deployments import Deployment, DeploymentStatus
 
 
 def _fixture_deployment(**overrides):

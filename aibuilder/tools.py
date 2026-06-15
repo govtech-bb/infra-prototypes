@@ -354,12 +354,10 @@ def deploy_repo(
     }
 
 
-from datetime import datetime, timezone  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 
 
-def get_deployment_status(
-    deployment_id: str, *, session_id: str, session=None, **_: Any
-) -> dict:
+def get_deployment_status(deployment_id: str, *, session_id: str, session=None, **_: Any) -> dict:
     """Return one deployment's status. Team-wide visibility by design.
 
     `session_id` is a browser-session identifier, NOT an auth principal — the
@@ -390,7 +388,7 @@ def list_deployments(*, session_id: str, session=None, **_: Any) -> dict:
 
 
 def _deployment_row(d) -> dict:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     remaining_hours = max(0, int((d.expires_at - now).total_seconds() // 3600))
     return {
         "deployment_id": d.deployment_id,

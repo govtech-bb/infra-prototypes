@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from deployments import Deployment, DeploymentStatus, SqliteDeploymentStore
+from deployments import DeploymentStatus, SqliteDeploymentStore
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def test_create_returns_deployment_with_id_and_queued_status(store):
     assert d.deployment_id
     assert d.status == DeploymentStatus.QUEUED
     assert d.session_id == "s1"
-    assert d.expires_at > datetime.now(timezone.utc)
+    assert d.expires_at > datetime.now(UTC)
 
 
 def test_get_returns_none_for_missing(store):
@@ -68,7 +68,7 @@ def test_count_today_for_session_counts_only_today(store):
 
 def test_list_expired_returns_past_ttl(store):
     d = store.create("s", "u", "static_site", "a", "e", ttl_days=14)
-    d.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    d.expires_at = datetime.now(UTC) - timedelta(hours=1)
     d.status = DeploymentStatus.LIVE
     store.save(d)
     expired = store.list_expired()
@@ -78,7 +78,7 @@ def test_list_expired_returns_past_ttl(store):
 def test_extend_resets_clock(store):
     d = store.create("s", "u", "static_site", "a", "e", ttl_days=14)
     original = d.expires_at
-    d.expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+    d.expires_at = datetime.now(UTC) + timedelta(days=1)
     store.save(d)
     d = store.extend(d.deployment_id, days=14)
     assert d.expires_at > original

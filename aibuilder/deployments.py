@@ -11,12 +11,12 @@ import enum
 import json
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 
-class DeploymentStatus(str, enum.Enum):
+class DeploymentStatus(str, enum.Enum):  # noqa: UP042
     QUEUED = "queued"
     CLONING = "cloning"
     APPLYING = "applying"
@@ -59,12 +59,10 @@ class Deployment:
     status: DeploymentStatus = DeploymentStatus.QUEUED
     outputs: dict = field(default_factory=dict)
     knobs: dict = field(default_factory=dict)
-    expires_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc) + timedelta(days=14)
-    )
+    expires_at: datetime = field(default_factory=lambda: datetime.now(UTC) + timedelta(days=14))
     last_error: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 _SCHEMA = """
@@ -117,7 +115,7 @@ class SqliteDeploymentStore:
             pattern=pattern,
             project_name=project_name,
             env=env,
-            expires_at=datetime.now(timezone.utc) + timedelta(days=ttl_days),
+            expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
         )
         self.save(d)
         return d
@@ -179,7 +177,7 @@ class SqliteDeploymentStore:
         return [self._row_to_deployment(r) for r in rows]
 
     def list_expired(self) -> list[Deployment]:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM deployments WHERE status = ? AND expires_at < ?",
@@ -205,7 +203,7 @@ class SqliteDeploymentStore:
         d = self.get(deployment_id)
         if d is None:
             return None
-        d.expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+        d.expires_at = datetime.now(UTC) + timedelta(days=days)
         self.save(d)
         return d
 
@@ -226,7 +224,7 @@ class SqliteDeploymentStore:
     def _row_to_deployment(row: sqlite3.Row) -> Deployment:
         def _ensure_utc(dt: datetime) -> datetime:
             if dt.tzinfo is None:
-                return dt.replace(tzinfo=timezone.utc)
+                return dt.replace(tzinfo=UTC)
             return dt
 
         return Deployment(
