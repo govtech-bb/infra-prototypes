@@ -215,7 +215,19 @@ def test_tool_definitions_shape():
     from tools import TOOL_DEFINITIONS
 
     names = [t["name"] for t in TOOL_DEFINITIONS]
-    assert names == ["clone_repo", "analyze_repo", "recommend_architecture", "estimate_cost"]
+    assert names == [
+        "clone_repo",
+        "analyze_repo",
+        "recommend_architecture",
+        "estimate_cost",
+        "deploy_repo",
+        "get_deployment_status",
+        "list_deployments",
+        "redeploy",
+        "modify_deployment",
+        "destroy_deployment",
+        "extend_deployment",
+    ]
     for t in TOOL_DEFINITIONS:
         assert "description" in t
         assert "input_schema" in t

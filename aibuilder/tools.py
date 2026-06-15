@@ -273,12 +273,111 @@ TOOL_DEFINITIONS = [
     },
 ]
 
+TOOL_DEFINITIONS.extend(
+    [
+        {
+            "name": "deploy_repo",
+            "description": (
+                "Deploy a previously analyzed repo to AWS using the catalog pattern. "
+                "Returns a deployment_id immediately; the actual apply runs in the "
+                "background. Use get_deployment_status to check progress."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "github_url": {"type": "string"},
+                    "pattern": {
+                        "type": "string",
+                        "description": "Catalog pattern key, e.g. static_site",
+                    },
+                    "project_name": {
+                        "type": "string",
+                        "description": "URL-safe slug derived from the site name",
+                    },
+                    "env": {"type": "string", "default": "proto"},
+                    "knobs": {
+                        "type": "object",
+                        "description": "Pattern-specific options (e.g. {is_spa: true})",
+                    },
+                },
+                "required": ["github_url", "pattern", "project_name"],
+            },
+        },
+        {
+            "name": "get_deployment_status",
+            "description": "Look up one deployment by its deployment_id.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"deployment_id": {"type": "string"}},
+                "required": ["deployment_id"],
+            },
+        },
+        {
+            "name": "list_deployments",
+            "description": "List active (non-destroyed) deployments with TTL remaining.",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "redeploy",
+            "description": "Re-clone and re-sync content for a live deployment without re-running tofu.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"deployment_id": {"type": "string"}},
+                "required": ["deployment_id"],
+            },
+        },
+        {
+            "name": "modify_deployment",
+            "description": "Apply chat-driven infra knob changes (e.g. {is_spa: true}) to a live deployment.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "deployment_id": {"type": "string"},
+                    "changes": {"type": "object"},
+                },
+                "required": ["deployment_id", "changes"],
+            },
+        },
+        {
+            "name": "destroy_deployment",
+            "description": (
+                "Two-phase destroy. confirm=false returns a preview; confirm=true tears down "
+                "the deployment. Always preview first and surface the message to the user."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "deployment_id": {"type": "string"},
+                    "confirm": {"type": "boolean", "default": False},
+                },
+                "required": ["deployment_id"],
+            },
+        },
+        {
+            "name": "extend_deployment",
+            "description": "Reset the TTL clock on a deployment to 14 days from now.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"deployment_id": {"type": "string"}},
+                "required": ["deployment_id"],
+            },
+        },
+    ]
+)
+
 
 _TOOL_FUNCS = {
     "clone_repo": clone_repo,
     "analyze_repo": analyze_repo,
     "recommend_architecture": recommend_architecture,
     "estimate_cost": estimate_cost,
+    "deploy_repo": lambda **kw: deploy_repo(**kw),
+    "get_deployment_status": lambda **kw: get_deployment_status(**kw),
+    "list_deployments": lambda **kw: list_deployments(**kw),
+    "redeploy": lambda **kw: redeploy(**kw),
+    "modify_deployment": lambda **kw: modify_deployment(**kw),
+    "destroy_deployment": lambda **kw: destroy_deployment(**kw),
+    "extend_deployment": lambda **kw: extend_deployment(**kw),
 }
 
 
