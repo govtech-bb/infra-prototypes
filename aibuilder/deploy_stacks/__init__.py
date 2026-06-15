@@ -8,8 +8,8 @@ the registry so the message can't drift from reality.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from deploy_stacks import _registry
 

@@ -1,5 +1,4 @@
 # aibuilder/tests/test_jobs.py
-import asyncio
 
 import pytest
 
@@ -13,6 +12,7 @@ async def test_enqueue_runs_in_order():
     async def make_job(label):
         async def job():
             ran.append(label)
+
         return job
 
     q = JobQueue()

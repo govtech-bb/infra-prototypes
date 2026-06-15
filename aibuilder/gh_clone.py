@@ -59,6 +59,7 @@ def clone(github_url: str, dest_dir: Path) -> tuple[Path | None, dict | None]:
     if token and _GITHUB_PREFIX.match(github_url):
         if target.exists():
             import shutil
+
             shutil.rmtree(target)
         r = _try(_inject_token(github_url, token))
         if r.returncode == 0:

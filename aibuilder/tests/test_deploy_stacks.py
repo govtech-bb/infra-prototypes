@@ -6,7 +6,7 @@ from deploy_stacks import StackSpec, get_spec, list_supported_patterns, register
 @pytest.fixture(autouse=True)
 def fresh_registry(monkeypatch):
     """Each test gets an empty registry."""
-    from deploy_stacks import _registry  # noqa: PLC0415
+    from deploy_stacks import _registry
 
     monkeypatch.setattr(_registry, "STACK_REGISTRY", {})
 

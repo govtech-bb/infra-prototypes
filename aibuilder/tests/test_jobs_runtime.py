@@ -3,8 +3,8 @@ from unittest.mock import patch
 
 import pytest
 
-from deployments import DeploymentStatus, SqliteDeploymentStore
 import deploy_stacks.static_website  # noqa: F401
+from deployments import DeploymentStatus, SqliteDeploymentStore
 
 
 @pytest.fixture
@@ -14,8 +14,8 @@ def store(tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_deploy_job_happy_path(store, tmp_path, monkeypatch):
-    from jobs_runtime import run_deploy_job
     import jobs_runtime
+    from jobs_runtime import run_deploy_job
 
     monkeypatch.setattr(jobs_runtime, "_STORE", store)
     monkeypatch.setenv("AIBUILDER_DEPLOY_WORKDIR", str(tmp_path / "deploys"))
@@ -66,8 +66,8 @@ async def test_run_deploy_job_happy_path(store, tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_deploy_job_records_failure_on_clone(store, tmp_path, monkeypatch):
-    from jobs_runtime import run_deploy_job
     import jobs_runtime
+    from jobs_runtime import run_deploy_job
 
     monkeypatch.setattr(jobs_runtime, "_STORE", store)
     monkeypatch.setenv("AIBUILDER_DEPLOY_WORKDIR", str(tmp_path / "deploys"))
@@ -87,8 +87,8 @@ async def test_run_deploy_job_records_failure_on_clone(store, tmp_path, monkeypa
 
 @pytest.mark.asyncio
 async def test_run_deploy_job_records_failure_on_apply(store, tmp_path, monkeypatch):
-    from jobs_runtime import run_deploy_job
     import jobs_runtime
+    from jobs_runtime import run_deploy_job
 
     monkeypatch.setattr(jobs_runtime, "_STORE", store)
     monkeypatch.setenv("AIBUILDER_DEPLOY_WORKDIR", str(tmp_path / "deploys"))
