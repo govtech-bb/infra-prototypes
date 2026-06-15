@@ -46,3 +46,7 @@ def not_deployable_message(pattern: str) -> str:
         f"Currently supported: {', '.join(f'`{p}`' for p in supported)}. "
         "Other patterns are coming in later waves."
     )
+
+
+# Register built-in patterns. New patterns add a sibling module here.
+from deploy_stacks import static_website  # noqa: E402,F401
