@@ -294,7 +294,7 @@ def execute_tool(name: str, args: dict, *, session_id: str, session: Any) -> dic
 import asyncio  # noqa: E402
 
 from deploy_stacks import get_spec, not_deployable_message  # noqa: E402
-from deployments import SqliteDeploymentStore  # noqa: E402
+from deployments import DeploymentStatus, SqliteDeploymentStore  # noqa: E402
 from limits import check_caps  # noqa: E402
 
 # Wired by app.py at startup so tools can reach the global store + queue.
@@ -342,20 +342,7 @@ def deploy_repo(
 
     from jobs_runtime import run_deploy_job  # late import to avoid cycle
 
-    async def _job():
-        await run_deploy_job(d.deployment_id)
-
-    coro = _JOB_QUEUE.enqueue(_job)
-    # Schedule on the running loop (production); if no loop is running
-    # (synchronous test context), discard the coroutine safely.
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(coro)  # noqa: RUF006
-    except RuntimeError:
-        # No running event loop — close the coroutine to suppress
-        # "coroutine was never awaited" warnings in sync test contexts.
-        if hasattr(coro, "close"):
-            coro.close()
+    _enqueue_job(lambda: run_deploy_job(d.deployment_id))
 
     return {
         "deployment_id": d.deployment_id,
@@ -405,3 +392,100 @@ def _deployment_row(d) -> dict:
         "warn_expiring_soon": remaining_hours < 48,
         "last_error": d.last_error,
     }
+
+
+def _enqueue_job(factory) -> None:
+    """Schedule a coroutine factory on the running loop; degrade safely in sync tests."""
+
+    async def _wrapper():
+        await factory()
+
+    coro = _JOB_QUEUE.enqueue(_wrapper)
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(coro)  # noqa: RUF006
+    except RuntimeError:
+        if hasattr(coro, "close"):
+            coro.close()
+
+
+def redeploy(deployment_id: str, *, session_id: str, session=None, **_: Any) -> dict:
+    if _STORE is None:
+        return {"summary": "Deploy engine not initialized.", "details": ""}
+    d = _STORE.get(deployment_id)
+    if d is None:
+        return {"summary": f"No deployment `{deployment_id}`.", "details": ""}
+    if d.status != DeploymentStatus.LIVE:
+        return {
+            "summary": (
+                f"Deployment is in status `{d.status.value}` — redeploy is only valid "
+                "from `live`. Try `get_deployment_status` first."
+            ),
+            "details": "",
+        }
+    from jobs_runtime import run_redeploy_job
+
+    _enqueue_job(lambda: run_redeploy_job(d.deployment_id))
+    return {"deployment_id": d.deployment_id, "status": "queued"}
+
+
+def modify_deployment(
+    deployment_id: str, changes: dict, *, session_id: str, session=None, **_: Any
+) -> dict:
+    if _STORE is None:
+        return {"summary": "Deploy engine not initialized.", "details": ""}
+    d = _STORE.get(deployment_id)
+    if d is None:
+        return {"summary": f"No deployment `{deployment_id}`.", "details": ""}
+    spec = get_spec(d.pattern)
+    if spec is None:
+        return {"summary": f"Pattern `{d.pattern}` has no spec.", "details": ""}
+    bad = [k for k in changes if k not in spec.allowed_knobs]
+    if bad:
+        return {
+            "summary": (
+                f"These knob(s) aren't modifiable for `{d.pattern}`: "
+                f"{', '.join('`' + k + '`' for k in bad)}. Allowed: "
+                f"{', '.join('`' + k + '`' for k in spec.allowed_knobs)}."
+            ),
+            "details": "",
+        }
+    d.knobs.update(changes)
+    _STORE.save(d)
+    from jobs_runtime import run_modify_job
+
+    _enqueue_job(lambda: run_modify_job(d.deployment_id))
+    return {"deployment_id": d.deployment_id, "status": "queued"}
+
+
+def destroy_deployment(
+    deployment_id: str, confirm: bool = False, *, session_id: str, session=None, **_: Any
+) -> dict:
+    if _STORE is None:
+        return {"summary": "Deploy engine not initialized.", "details": ""}
+    d = _STORE.get(deployment_id)
+    if d is None:
+        return {"summary": f"No deployment `{deployment_id}`.", "details": ""}
+    if not confirm:
+        site = d.outputs.get("site_url", "—")
+        return {
+            "preview": True,
+            "message": (
+                f"Will destroy `{d.project_name}-{d.env}` (pattern: {d.pattern}, "
+                f"site: {site}). Reply `confirm destroy {deployment_id[:8]}` to proceed."
+            ),
+            "deployment_id": deployment_id,
+        }
+    from jobs_runtime import run_destroy_job
+
+    _enqueue_job(lambda: run_destroy_job(d.deployment_id))
+    return {"deployment_id": d.deployment_id, "status": "queued"}
+
+
+def extend_deployment(deployment_id: str, *, session_id: str, session=None, **_: Any) -> dict:
+    if _STORE is None:
+        return {"summary": "Deploy engine not initialized.", "details": ""}
+    d = _STORE.extend(deployment_id, days=_TTL_DAYS_DEFAULT)
+    if d is None:
+        return {"summary": f"No deployment `{deployment_id}`.", "details": ""}
+    return _deployment_row(d)
