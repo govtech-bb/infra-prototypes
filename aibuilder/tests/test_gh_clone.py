@@ -63,6 +63,12 @@ def test_clone_private_retries_with_token(tmp_path, monkeypatch):
     assert "x-access-token" in calls[1][-2]
 
 
+def test_clone_rejects_dash_prefix(tmp_path):
+    _, err = clone("--upload-pack=evil", tmp_path)
+    assert err is not None
+    assert "invalid" in err["summary"].lower() or "cannot" in err["details"].lower()
+
+
 def test_clone_failure_scrubs_token_in_error(tmp_path, monkeypatch):
     monkeypatch.setenv("AIBUILDER_GITHUB_TOKEN", "ghp_xyz")
 
