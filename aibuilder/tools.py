@@ -360,6 +360,14 @@ from datetime import datetime, timezone  # noqa: E402
 def get_deployment_status(
     deployment_id: str, *, session_id: str, session=None, **_: Any
 ) -> dict:
+    """Return one deployment's status. Team-wide visibility by design.
+
+    `session_id` is a browser-session identifier, NOT an auth principal — the
+    bearer token in app.py already gates all /api/* access. Multiple sessions
+    from the same teammate (or different teammates sharing the token) all see
+    each other's deployments deliberately, so anyone on the team can destroy
+    or redeploy any prototype. If per-user identity ever lands, scope here.
+    """
     if _STORE is None:
         return {"summary": "Deploy engine not initialized.", "details": ""}
     d = _STORE.get(deployment_id)
@@ -369,6 +377,12 @@ def get_deployment_status(
 
 
 def list_deployments(*, session_id: str, session=None, **_: Any) -> dict:
+    """List active deployments (team-wide, no session scoping by design).
+
+    See get_deployment_status's docstring — `session_id` is not an auth
+    boundary. Returning all active deployments is the intended UX so
+    teammates can see + manage each other's prototypes.
+    """
     if _STORE is None:
         return {"summary": "Deploy engine not initialized.", "details": ""}
     rows = [_deployment_row(d) for d in _STORE.list_active()]
