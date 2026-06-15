@@ -38,9 +38,15 @@ def clone(github_url: str, dest_dir: Path) -> tuple[Path | None, dict | None]:
     repo_name = github_url.rstrip("/").split("/")[-1].removesuffix(".git")
     target = dest_dir / repo_name
 
+    if github_url.startswith("-"):
+        return None, {
+            "summary": "Invalid GitHub URL.",
+            "details": "URL cannot start with '-'.",
+        }
+
     def _try(url: str) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["git", "clone", "--depth=1", url, str(target)],
+            ["git", "clone", "--depth=1", "--", url, str(target)],
             capture_output=True,
             text=True,
             timeout=120,
