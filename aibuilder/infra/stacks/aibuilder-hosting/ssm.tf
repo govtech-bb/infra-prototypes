@@ -20,3 +20,16 @@ resource "aws_ssm_parameter" "auth_token" {
 
   tags = { Name = "${local.name}-auth-token" }
 }
+
+resource "aws_ssm_parameter" "github_token" {
+  name        = "/aibuilder/github-token"
+  description = "Fine-grained GitHub PAT (read-only, govtech-bb org) for cloning private repos"
+  type        = "SecureString"
+  value       = "PLACEHOLDER_OVERWRITE_VIA_CLI"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  tags = { Name = "${local.name}-github-token" }
+}

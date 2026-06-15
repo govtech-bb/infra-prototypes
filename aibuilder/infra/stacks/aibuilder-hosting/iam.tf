@@ -32,7 +32,8 @@ resource "aws_iam_role_policy" "task_execution_ssm" {
       Effect = "Allow"
       Action = ["ssm:GetParameters"]
       Resource = [
-        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${aws_ssm_parameter.auth_token.name}"
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${aws_ssm_parameter.auth_token.name}",
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${aws_ssm_parameter.github_token.name}",
       ]
     }]
   })

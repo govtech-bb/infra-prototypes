@@ -30,13 +30,20 @@ resource "aws_ecs_task_definition" "aibuilder" {
       { name = "AWS_REGION", value = var.aws_region },
       { name = "AIBUILDER_BEDROCK_MODEL", value = var.bedrock_model_id },
       { name = "AIBUILDER_DB", value = "/aibuilder/data/sessions.db" },
+      { name = "AIBUILDER_DEPLOYMENTS_DB", value = "/aibuilder/data/deployments.db" },
+      { name = "AIBUILDER_DEPLOY_STATE_BUCKET", value = aws_s3_bucket.deploy_state.id },
+      { name = "AIBUILDER_DEPLOY_LOCK_TABLE", value = aws_dynamodb_table.deploy_lock.name },
     ]
 
     secrets = [
       {
         name      = "AIBUILDER_TOKEN"
         valueFrom = aws_ssm_parameter.auth_token.arn
-      }
+      },
+      {
+        name      = "AIBUILDER_GITHUB_TOKEN"
+        valueFrom = aws_ssm_parameter.github_token.arn
+      },
     ]
 
     mountPoints = [{
