@@ -365,3 +365,43 @@ def deploy_repo(
             "or check `get_deployment_status` for live updates."
         ),
     }
+
+
+from datetime import datetime, timezone  # noqa: E402
+
+
+def get_deployment_status(
+    deployment_id: str, *, session_id: str, session=None, **_: Any
+) -> dict:
+    if _STORE is None:
+        return {"summary": "Deploy engine not initialized.", "details": ""}
+    d = _STORE.get(deployment_id)
+    if d is None:
+        return {"summary": f"No deployment `{deployment_id}` found.", "details": ""}
+    return _deployment_row(d)
+
+
+def list_deployments(*, session_id: str, session=None, **_: Any) -> dict:
+    if _STORE is None:
+        return {"summary": "Deploy engine not initialized.", "details": ""}
+    rows = [_deployment_row(d) for d in _STORE.list_active()]
+    return {"deployments": rows}
+
+
+def _deployment_row(d) -> dict:
+    now = datetime.now(timezone.utc)
+    remaining_hours = max(0, int((d.expires_at - now).total_seconds() // 3600))
+    return {
+        "deployment_id": d.deployment_id,
+        "session_id": d.session_id,
+        "repo_url": d.repo_url,
+        "pattern": d.pattern,
+        "project_name": d.project_name,
+        "env": d.env,
+        "status": d.status.value,
+        "outputs": d.outputs,
+        "knobs": d.knobs,
+        "ttl_hours_remaining": remaining_hours,
+        "warn_expiring_soon": remaining_hours < 48,
+        "last_error": d.last_error,
+    }

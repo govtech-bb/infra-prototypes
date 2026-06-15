@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -74,3 +75,36 @@ def test_deploy_repo_respects_cap(store, monkeypatch):
         session=MagicMock(),
     )
     assert "session" in out["summary"].lower()
+
+
+def test_get_deployment_status_returns_row(store, monkeypatch):
+    from tools import get_deployment_status
+
+    monkeypatch.setattr("tools._STORE", store)
+    d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
+    out = get_deployment_status(deployment_id=d.deployment_id, session_id="s", session=None)
+    assert out["deployment_id"] == d.deployment_id
+    assert out["status"] == "queued"
+
+
+def test_get_deployment_status_404(store, monkeypatch):
+    from tools import get_deployment_status
+
+    monkeypatch.setattr("tools._STORE", store)
+    out = get_deployment_status(deployment_id="nope", session_id="s", session=None)
+    assert "summary" in out
+
+
+def test_list_deployments_includes_ttl_remaining(store, monkeypatch):
+    from tools import list_deployments
+
+    monkeypatch.setattr("tools._STORE", store)
+    d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
+    d.expires_at = datetime.now(timezone.utc) + timedelta(days=2)
+    store.save(d)
+    out = list_deployments(session_id="s", session=None)
+    rows = out["deployments"]
+    assert any(r["deployment_id"] == d.deployment_id for r in rows)
+    row = next(r for r in rows if r["deployment_id"] == d.deployment_id)
+    assert row["ttl_hours_remaining"] > 0
+    assert row["ttl_hours_remaining"] < 100  # ~48h
