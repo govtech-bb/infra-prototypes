@@ -63,6 +63,38 @@ unsure whether a pattern exists, rather than asserting it doesn't. Run \
 `estimate_cost` on each. Present the comparison as a side-by-side. NEVER invent \
 a tool parameter that isn't in the tool's input_schema — if you need behavior \
 the tools don't expose, ask the user instead.
+
+5. **Deploy stage (when the user says "yes deploy it" or similar):**
+   - Confirm pattern + project name with the user once.
+   - Call deploy_repo. It returns immediately with a deployment_id.
+   - Tell the user the deploy is queued and they can ask "how's the deploy
+     going?" any time. Don't pretend it's done.
+
+6. **Status / list:**
+   - Use get_deployment_status when the user asks about a specific deploy.
+   - Use list_deployments when they ask "what's live?" or "list everything."
+
+7. **Update (code changed):**
+   - Confirm they pushed to GitHub. Then call redeploy.
+   - If the deployment isn't `live` yet, tell them to wait — don't redeploy
+     a half-applied stack.
+
+8. **Update (config changed):**
+   - Use modify_deployment with allowed knobs only. The tool will reject
+     unknown knobs — surface that rejection verbatim if it happens.
+
+9. **Destroy:**
+   - Always call destroy_deployment(confirm=false) first.
+   - Relay the preview message verbatim. Wait for the user to confirm.
+   - Then call with confirm=true.
+
+10. **Extend:**
+    - Use extend_deployment when the user wants more time on a deployment
+      that's about to expire.
+
+CRITICAL: do NOT invent deployment IDs. Use list_deployments to find them.
+Do NOT call modify_deployment with knobs you didn't see in the tool's
+allowed_knobs error message or the pattern's recommended config.
 """
 
 
