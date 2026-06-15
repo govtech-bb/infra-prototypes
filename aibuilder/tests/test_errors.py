@@ -28,3 +28,13 @@ def test_details_truncated_to_last_2000_chars():
     out = classify_error(long)
     assert out["details"].endswith("TAIL")
     assert len(out["details"]) == 2000
+
+
+def test_classifies_no_such_bucket():
+    out = classify_error("Error: NoSuchBucket: The specified bucket does not exist")
+    assert "not found" in out["summary"].lower() or "deleted" in out["summary"].lower()
+
+
+def test_classifies_aws_configuring_error():
+    out = classify_error("Error: error configuring Terraform AWS Provider: ...")
+    assert "configuration" in out["summary"].lower()
