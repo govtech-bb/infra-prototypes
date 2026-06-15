@@ -151,3 +151,56 @@ resource "aws_iam_role_policy" "task_deploy_state" {
     ]
   })
 }
+
+resource "aws_iam_role_policy" "task_deploy_w1" {
+  name = "${local.name}-task-deploy-w1"
+  role = aws_iam_role.task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:CreateBucket", "s3:DeleteBucket", "s3:GetBucket*", "s3:PutBucket*",
+          "s3:ListBucket", "s3:ListBucketVersions",
+          "s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:DeleteObjectVersion",
+          "s3:GetEncryptionConfiguration", "s3:PutEncryptionConfiguration",
+          "s3:GetBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteBucketPolicy",
+          "s3:GetBucketPublicAccessBlock", "s3:PutBucketPublicAccessBlock",
+          "s3:GetBucketTagging", "s3:PutBucketTagging",
+          "s3:GetBucketVersioning", "s3:PutBucketVersioning",
+        ]
+        Resource = [
+          "arn:aws:s3:::aibd-*",
+          "arn:aws:s3:::aibd-*/*",
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateDistribution", "cloudfront:UpdateDistribution",
+          "cloudfront:DeleteDistribution", "cloudfront:GetDistribution",
+          "cloudfront:GetDistributionConfig",
+          "cloudfront:CreateInvalidation", "cloudfront:GetInvalidation",
+          "cloudfront:ListDistributions",
+          "cloudfront:CreateOriginAccessControl", "cloudfront:GetOriginAccessControl",
+          "cloudfront:UpdateOriginAccessControl", "cloudfront:DeleteOriginAccessControl",
+          "cloudfront:ListOriginAccessControls",
+          "cloudfront:TagResource", "cloudfront:UntagResource", "cloudfront:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "cloudfront.amazonaws.com"
+          }
+        }
+      },
+    ]
+  })
+}
