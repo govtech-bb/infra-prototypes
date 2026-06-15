@@ -40,6 +40,24 @@ def _update(d: Deployment, status: DeploymentStatus, error: str | None = None) -
     _STORE.save(d)
 
 
+def _backend_config_args() -> list[str]:
+    return [
+        f"-backend-config=bucket={os.environ.get('AIBUILDER_DEPLOY_STATE_BUCKET', '')}",
+        f"-backend-config=region={os.environ.get('AWS_REGION', 'us-east-1')}",
+        f"-backend-config=dynamodb_table={os.environ.get('AIBUILDER_DEPLOY_LOCK_TABLE', '')}",
+    ]
+
+
+def _var_args(spec, d) -> list[str]:
+    args: list[str] = []
+    for k, v in spec.build_vars(d).items():
+        if isinstance(v, bool):
+            args.append(f"-var={k}={'true' if v else 'false'}")
+        else:
+            args.append(f"-var={k}={v}")
+    return args
+
+
 async def run_deploy_job(deployment_id: str) -> None:
     d = _STORE.get(deployment_id)
     if d is None:
@@ -52,8 +70,6 @@ async def run_deploy_job(deployment_id: str) -> None:
         return
 
     work = _workdir(deployment_id)
-    state_bucket = os.environ.get("AIBUILDER_DEPLOY_STATE_BUCKET", "")
-    lock_table = os.environ.get("AIBUILDER_DEPLOY_LOCK_TABLE", "")
 
     # 1. Clone
     _update(d, DeploymentStatus.CLONING)
@@ -70,13 +86,8 @@ async def run_deploy_job(deployment_id: str) -> None:
         "TF_DATA_DIR": str(work / "tf"),
     }
     init = subprocess.run(
-        [
-            "tofu", "init", "-input=false", "-reconfigure",
-            f"-backend-config=bucket={state_bucket}",
-            f"-backend-config=key={state_key}",
-            f"-backend-config=region={os.environ.get('AWS_REGION', 'us-east-1')}",
-            f"-backend-config=dynamodb_table={lock_table}",
-        ],
+        ["tofu", "init", "-input=false", "-reconfigure",
+         f"-backend-config=key={state_key}", *_backend_config_args()],
         cwd=spec.stack_dir,
         capture_output=True,
         text=True,
@@ -87,15 +98,8 @@ async def run_deploy_job(deployment_id: str) -> None:
         _update(d, DeploymentStatus.FAILED, classify_error(init.stderr)["details"])
         return
 
-    var_args: list[str] = []
-    for k, v in spec.build_vars(d).items():
-        if isinstance(v, bool):
-            var_args += [f"-var={k}={'true' if v else 'false'}"]
-        else:
-            var_args += [f"-var={k}={v}"]
-
     apply_res = subprocess.run(
-        ["tofu", "apply", "-auto-approve", "-input=false", *var_args],
+        ["tofu", "apply", "-auto-approve", "-input=false", *_var_args(spec, d)],
         cwd=spec.stack_dir,
         capture_output=True,
         text=True,
@@ -164,3 +168,110 @@ async def sync_content(d: Deployment, repo_path: Path) -> dict | None:
             return {"summary": "Content sync failed.", "details": str(e)}
 
     return await asyncio.to_thread(_sync)
+
+
+async def run_redeploy_job(deployment_id: str) -> None:
+    d = _STORE.get(deployment_id)
+    if d is None:
+        return
+    _update(d, DeploymentStatus.CLONING)
+    work = _workdir(deployment_id)
+    if (work / "src").exists():
+        import shutil
+        shutil.rmtree(work / "src")
+    repo_path, err = gh_clone.clone(d.repo_url, work / "src")
+    if err:
+        _update(d, DeploymentStatus.FAILED, err["summary"] + " :: " + err["details"])
+        return
+    _update(d, DeploymentStatus.SYNCING)
+    sync_err = await sync_content(d, repo_path)
+    if sync_err:
+        _update(d, DeploymentStatus.FAILED, sync_err["summary"])
+        return
+    _update(d, DeploymentStatus.LIVE)
+
+
+async def run_modify_job(deployment_id: str) -> None:
+    d = _STORE.get(deployment_id)
+    if d is None:
+        return
+    spec = get_spec(d.pattern)
+    if spec is None:
+        _update(d, DeploymentStatus.FAILED, f"no spec for {d.pattern}")
+        return
+    _update(d, DeploymentStatus.MODIFYING)
+    work = _workdir(deployment_id)
+    env = {**os.environ, "TF_DATA_DIR": str(work / "tf")}
+    state_key = f"deployments/{d.project_name}-{d.env}.tfstate"
+    init = subprocess.run(
+        ["tofu", "init", "-input=false", "-reconfigure",
+         f"-backend-config=key={state_key}", *_backend_config_args()],
+        cwd=spec.stack_dir, capture_output=True, text=True, env=env, timeout=180,
+    )
+    if init.returncode != 0:
+        _update(d, DeploymentStatus.FAILED, classify_error(init.stderr)["details"])
+        return
+    apply_res = subprocess.run(
+        ["tofu", "apply", "-auto-approve", "-input=false", *_var_args(spec, d)],
+        cwd=spec.stack_dir, capture_output=True, text=True, env=env, timeout=900,
+    )
+    if apply_res.returncode != 0:
+        _update(d, DeploymentStatus.FAILED, classify_error(apply_res.stderr)["details"])
+        return
+    _update(d, DeploymentStatus.LIVE)
+
+
+async def run_destroy_job(deployment_id: str) -> None:
+    d = _STORE.get(deployment_id)
+    if d is None:
+        return
+    spec = get_spec(d.pattern)
+    if spec is None:
+        _update(d, DeploymentStatus.FAILED, f"no spec for {d.pattern}")
+        return
+    _update(d, DeploymentStatus.DESTROYING)
+
+    bucket = d.outputs.get("bucket_name")
+    if bucket:
+        err = await asyncio.to_thread(_empty_bucket_sync, bucket)
+        if err:
+            _update(d, DeploymentStatus.FAILED, err["summary"])
+            return
+
+    work = _workdir(deployment_id)
+    env = {**os.environ, "TF_DATA_DIR": str(work / "tf")}
+    state_key = f"deployments/{d.project_name}-{d.env}.tfstate"
+    init = subprocess.run(
+        ["tofu", "init", "-input=false", "-reconfigure",
+         f"-backend-config=key={state_key}", *_backend_config_args()],
+        cwd=spec.stack_dir, capture_output=True, text=True, env=env, timeout=180,
+    )
+    if init.returncode != 0:
+        _update(d, DeploymentStatus.FAILED, classify_error(init.stderr)["details"])
+        return
+    destroy_res = subprocess.run(
+        ["tofu", "destroy", "-auto-approve", "-input=false", *_var_args(spec, d)],
+        cwd=spec.stack_dir, capture_output=True, text=True, env=env, timeout=600,
+    )
+    if destroy_res.returncode != 0:
+        _update(d, DeploymentStatus.FAILED, classify_error(destroy_res.stderr)["details"])
+        return
+    _update(d, DeploymentStatus.DESTROYED)
+
+
+def _empty_bucket_sync(bucket: str) -> dict | None:
+    import botocore.exceptions
+
+    try:
+        s3 = boto3.client("s3")
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket):
+            objects = [{"Key": o["Key"]} for o in page.get("Contents", [])]
+            if objects:
+                s3.delete_objects(Bucket=bucket, Delete={"Objects": objects})
+        return None
+    except botocore.exceptions.ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code == "NoSuchBucket":
+            return None
+        return {"summary": f"Could not empty bucket {bucket}.", "details": str(e)}

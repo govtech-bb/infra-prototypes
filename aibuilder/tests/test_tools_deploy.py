@@ -108,3 +108,85 @@ def test_list_deployments_includes_ttl_remaining(store, monkeypatch):
     row = next(r for r in rows if r["deployment_id"] == d.deployment_id)
     assert row["ttl_hours_remaining"] > 0
     assert row["ttl_hours_remaining"] < 100  # ~48h
+
+
+@pytest.fixture
+def mock_queue(monkeypatch):
+    q = MagicMock()
+    q.enqueue = MagicMock(return_value=None)
+    monkeypatch.setattr("tools._JOB_QUEUE", q)
+    return q
+
+
+def test_redeploy_enqueues_for_live_only(store, monkeypatch, mock_queue):
+    from tools import redeploy
+
+    monkeypatch.setattr("tools._STORE", store)
+    d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
+    out = redeploy(deployment_id=d.deployment_id, session_id="s", session=None)
+    assert "summary" in out  # not live yet — refuse
+    d.status = DeploymentStatus.LIVE
+    store.save(d)
+    out = redeploy(deployment_id=d.deployment_id, session_id="s", session=None)
+    assert out["status"] in ("queued", "syncing")
+
+
+def test_modify_rejects_unknown_knob(store, monkeypatch, mock_queue):
+    from tools import modify_deployment
+
+    monkeypatch.setattr("tools._STORE", store)
+    d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
+    d.status = DeploymentStatus.LIVE
+    store.save(d)
+    out = modify_deployment(
+        deployment_id=d.deployment_id,
+        changes={"haha_not_a_knob": True},
+        session_id="s",
+        session=None,
+    )
+    assert "knob" in out["summary"].lower()
+
+
+def test_modify_accepts_allowed_knob(store, monkeypatch, mock_queue):
+    from tools import modify_deployment
+
+    monkeypatch.setattr("tools._STORE", store)
+    d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
+    d.status = DeploymentStatus.LIVE
+    store.save(d)
+    out = modify_deployment(
+        deployment_id=d.deployment_id,
+        changes={"is_spa": True},
+        session_id="s",
+        session=None,
+    )
+    assert out["status"] in ("queued", "modifying")
+    loaded = store.get(d.deployment_id)
+    assert loaded.knobs["is_spa"] is True
+
+
+def test_destroy_two_phase(store, monkeypatch, mock_queue):
+    from tools import destroy_deployment
+
+    monkeypatch.setattr("tools._STORE", store)
+    d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
+    d.status = DeploymentStatus.LIVE
+    store.save(d)
+    preview = destroy_deployment(deployment_id=d.deployment_id, session_id="s", session=None)
+    assert preview["preview"] is True
+    confirmed = destroy_deployment(
+        deployment_id=d.deployment_id, confirm=True, session_id="s", session=None
+    )
+    assert confirmed["status"] in ("queued", "destroying")
+
+
+def test_extend_resets_clock(store, monkeypatch):
+    from tools import extend_deployment
+
+    monkeypatch.setattr("tools._STORE", store)
+    d = store.create("s", "u", "static_site", "p", "e", ttl_days=14)
+    d.status = DeploymentStatus.LIVE
+    d.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    store.save(d)
+    out = extend_deployment(deployment_id=d.deployment_id, session_id="s", session=None)
+    assert out["ttl_hours_remaining"] > 200  # 14 days = 336h
