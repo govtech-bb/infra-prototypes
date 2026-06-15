@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import anthropic
@@ -11,15 +14,44 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import jobs_runtime
+import reaper as reaper_module
+import tools
 from agent import run_agent_loop
+from deployments import SqliteDeploymentStore
+from jobs import JobQueue
 from sessions import Session, SqliteSessionStore
 
-app = FastAPI(title="aibuilder")
 client = anthropic.AnthropicBedrock(
     aws_region=os.environ.get("AWS_REGION", "us-east-1"),
 )
 _DB_PATH = Path(os.environ.get("AIBUILDER_DB", Path(__file__).parent / "data" / "sessions.db"))
 store = SqliteSessionStore(_DB_PATH)
+
+_DEPLOY_DB_PATH = Path(
+    os.environ.get("AIBUILDER_DEPLOYMENTS_DB", Path(__file__).parent / "data" / "deployments.db")
+)
+deployment_store = SqliteDeploymentStore(_DEPLOY_DB_PATH)
+job_queue = JobQueue()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    deployment_store.recover_in_flight()
+    jobs_runtime.configure(deployment_store)
+    tools.configure(deployment_store, job_queue)
+    await job_queue.start()
+    reaper_task = asyncio.create_task(reaper_module.run_loop(deployment_store, job_queue))
+    try:
+        yield
+    finally:
+        reaper_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reaper_task
+        await job_queue.stop()
+
+
+app = FastAPI(title="aibuilder", lifespan=lifespan)
 
 _AUTH_TOKEN = os.environ.get("AIBUILDER_TOKEN") or None
 # Paths that are always open (no auth required), checked as prefixes
@@ -85,6 +117,25 @@ def chat(req: ChatRequest) -> ChatResponse:
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/deployments/{deployment_id}")
+def deployment_status(deployment_id: str) -> dict:
+    d = deployment_store.get(deployment_id)
+    if d is None:
+        raise HTTPException(404, f"No deployment {deployment_id}")
+    return tools._deployment_row(d)
+
+
+@app.post("/api/deployments/{deployment_id}/redeploy")
+def trigger_redeploy(deployment_id: str) -> JSONResponse:
+    d = deployment_store.get(deployment_id)
+    if d is None:
+        raise HTTPException(404, f"No deployment {deployment_id}")
+    out = tools.redeploy(deployment_id=deployment_id, session_id=d.session_id)
+    if "summary" in out:
+        return JSONResponse(status_code=409, content=out)
+    return JSONResponse(status_code=202, content=out)
 
 
 _STATIC_DIR = Path(__file__).parent / "static"
