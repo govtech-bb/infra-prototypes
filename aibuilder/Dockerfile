@@ -10,6 +10,17 @@ RUN apt-get update \
          ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# OpenTofu 1.8.x — pinned to match CI; deploys run from inside this image.
+ARG TOFU_VERSION=1.8.5
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends unzip wget \
+    && wget -q "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_amd64.zip" -O /tmp/tofu.zip \
+    && unzip /tmp/tofu.zip -d /usr/local/bin/ \
+    && chmod +x /usr/local/bin/tofu \
+    && rm /tmp/tofu.zip \
+    && apt-get purge -y unzip wget \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
