@@ -41,8 +41,16 @@ resource "aws_ecs_task_definition" "aibuilder" {
         valueFrom = aws_ssm_parameter.auth_token.arn
       },
       {
-        name      = "AIBUILDER_GITHUB_TOKEN"
-        valueFrom = aws_ssm_parameter.github_token.arn
+        name      = "AIBUILDER_GITHUB_APP_ID"
+        valueFrom = aws_ssm_parameter.github_app_id.arn
+      },
+      {
+        name      = "AIBUILDER_GITHUB_APP_INSTALLATION_ID"
+        valueFrom = aws_ssm_parameter.github_app_installation_id.arn
+      },
+      {
+        name      = "AIBUILDER_GITHUB_APP_PRIVATE_KEY"
+        valueFrom = aws_ssm_parameter.github_app_private_key.arn
       },
     ]
 
