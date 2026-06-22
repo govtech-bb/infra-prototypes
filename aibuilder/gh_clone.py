@@ -1,20 +1,41 @@
 # aibuilder/gh_clone.py
 """Clone GitHub repos with optional private-repo retry.
 
-First attempt is bare https. On failure (non-zero exit), if
-AIBUILDER_GITHUB_TOKEN is set in the env, retry with the token
-injected as `x-access-token:<token>@`. The token is scrubbed from any
-error message before it leaves this module.
+First attempt is bare https. On failure (non-zero exit), if a GitHub
+App installation token is available (via gh_app.get_installation_token),
+retry with the token injected as `x-access-token:<token>@`. The token
+is scrubbed from any error message before it leaves this module.
 """
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 from pathlib import Path
 
 _GITHUB_PREFIX = re.compile(r"^https://github\.com/")
+
+
+def _get_token_or_none() -> str | None:
+    """Mint a GitHub App installation token, or return None if the App isn't configured.
+
+    Falling back to None matches the public-repo path — clone proceeds without
+    auth and only fails if the repo is private (in which case the error will
+    say so and the user can configure the App).
+    """
+    try:
+        from gh_app import GhAppNotConfigured, get_installation_token
+    except ImportError:
+        return None
+    try:
+        return get_installation_token()
+    except GhAppNotConfigured:
+        return None
+    except Exception:
+        # GhAppAuthFailed or anything else — surface as "no token" so we
+        # don't crash on a failed mint; the bare-URL clone may still work
+        # for public repos and the user will see a clear failure for private.
+        return None
 
 
 def _scrub_token(s: str, token: str | None) -> str:
@@ -32,7 +53,7 @@ def clone(github_url: str, dest_dir: Path) -> tuple[Path | None, dict | None]:
 
     Path is None and error is the {summary, details} dict on failure.
     """
-    token = os.environ.get("AIBUILDER_GITHUB_TOKEN")
+    token = _get_token_or_none()
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     repo_name = github_url.rstrip("/").split("/")[-1].removesuffix(".git")
