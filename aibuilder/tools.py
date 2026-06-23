@@ -10,10 +10,10 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
+import gh_clone
 from analyzer import analyze_repo as _analyze
 from patterns import recommend as _recommend
 from pricing import estimate as _estimate
@@ -76,24 +76,18 @@ def clone_repo(github_url: str, *, session_id: str, **_: Any) -> dict:
         shutil.rmtree(target)
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    proc = subprocess.run(
-        ["git", "clone", "--depth=1", github_url, str(target)],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
+    # Route through gh_clone so private govtech-bb repos get the GitHub App
+    # installation-token retry path. gh_clone clones into dest_dir/<repo>;
+    # we pass session_root and let it append repo_name to match the target
+    # path we computed above.
+    cloned_path, err = gh_clone.clone(github_url, session_root)
+    if err is not None:
         shutil.rmtree(target, ignore_errors=True)
-        stderr = proc.stderr or ""
-        if "not found" in stderr.lower() or "could not read" in stderr.lower():
-            return {
-                "summary": "I couldn't reach that repo. "
-                "I can only see public repos right now — make sure the URL is correct and public.",
-                "details": stderr[-2000:],
-            }
-        return {
-            "summary": "Cloning the repo failed.",
-            "details": stderr[-2000:],
-        }
+        return err
+    # gh_clone returns the actual path it cloned to; if it differs from
+    # `target` (shouldn't), trust gh_clone's path.
+    if cloned_path is not None and str(cloned_path) != str(target):
+        target = cloned_path
 
     files = [p for p in target.rglob("*") if p.is_file() and ".git" not in p.parts]
     file_count = len(files)
