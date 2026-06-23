@@ -57,7 +57,7 @@ def _sign_jwt(app_id: str, private_key: str) -> str:
     payload = {
         "iat": now - 30,  # 30-sec backdate to tolerate small clock skew
         "exp": now + _JWT_TTL_SECONDS,
-        "iss": int(app_id),
+        "iss": app_id,  # PyJWT 2.x requires string; GitHub accepts either
     }
     return pyjwt.encode(payload, private_key, algorithm="RS256")
 
