@@ -94,7 +94,10 @@ def test_clone_handles_git_failure(tmp_path: Path, monkeypatch):
     with patch("subprocess.run", side_effect=fake_run):
         result = clone_repo("https://github.com/no/exist", session_id="s3")
     assert "summary" in result
-    assert "public" in result["summary"].lower()
+    # gh_clone returns "Could not clone the repository. Is the URL correct
+    # and accessible?" when both attempts fail. Word "clone" is the stable
+    # substring across summary wording changes.
+    assert "clone" in result["summary"].lower() or "could not" in result["summary"].lower()
 
 
 # Round-trip tests: analyze → recommend → estimate
