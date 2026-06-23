@@ -9,12 +9,10 @@ is scrubbed from any error message before it leaves this module.
 
 from __future__ import annotations
 
-import logging
 import re
 import subprocess
 from pathlib import Path
 
-log = logging.getLogger("aibuilder.gh_clone")
 _GITHUB_PREFIX = re.compile(r"^https://github\.com/")
 
 
@@ -28,18 +26,18 @@ def _get_token_or_none() -> str | None:
     try:
         from gh_app import GhAppNotConfigured, get_installation_token
     except ImportError as e:
-        log.warning("gh_app import failed: %s", e)
+        print(f"[gh_clone] gh_app import failed: {e}", flush=True)
         return None
     try:
         return get_installation_token()
     except GhAppNotConfigured as e:
-        log.info("gh_app not configured: %s", e)
+        print(f"[gh_clone] gh_app not configured: {e}", flush=True)
         return None
     except Exception as e:
         # GhAppAuthFailed, network, key-format, etc. Logged so the next CloudWatch
         # query shows what's going on; still falls back to None so public-repo
         # clones don't crash when the App isn't usable.
-        log.warning("gh_app token mint failed (%s): %s", type(e).__name__, e)
+        print(f"[gh_clone] gh_app token mint failed ({type(e).__name__}): {e}", flush=True)
         return None
 
 
